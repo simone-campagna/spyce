@@ -1,0 +1,2 @@
+class SpiceError(RuntimeError):
+    pass
