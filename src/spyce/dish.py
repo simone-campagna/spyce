@@ -6,9 +6,9 @@ from collections.abc import MutableMapping
 from contextlib import contextmanager
 from pathlib import Path
 
-from .dose import default_spice_type, Dose
-from .error import SpiceError
-from .spice import Spice
+from .dose import default_spyce_type, Dose
+from .error import SpyceError
+from .spyce import Spyce
 
 __all__ = [
     'Dish',
@@ -23,8 +23,8 @@ DEFAULT_BACKUP_FORMAT = '{path}.bck.{timestamp}'
 
 
 class Dish(MutableMapping):
-    __re_section__ = re.compile(r'\# spice:\s+section\s+(?P<section>source|data)\s*')
-    __re_spice__ = re.compile(r'\# spice:\s+(?P<action>start|end)\s+(?P<section>source|data)/(?P<name>[^\s\/\:]+)(?:\:(?P<type>\S+))?')
+    __re_section__ = re.compile(r'\# spyce:\s+section\s+(?P<section>source|data)\s*')
+    __re_spyce__ = re.compile(r'\# spyce:\s+(?P<action>start|end)\s+(?P<section>source|data)/(?P<name>[^\s\/\:]+)(?:\:(?P<type>\S+))?')
     __sections__ = {'source', 'data'}
 
     def __init__(self, file=__file__, lines=None):
@@ -39,73 +39,73 @@ class Dish(MutableMapping):
         self.path = path
         self.filename = str(self.path) if self.path is not None else '<stdin>'
         self.lines = lines
-        self.spices = {}
+        self.spyces = {}
         self.section = {'source': None, 'data': None}
         self._parse_lines()
         self.content_version = 0
 
-    def _build_spice(self, start, section, name, spice_type):
+    def _build_spyce(self, start, section, name, spyce_type):
         filename = self.filename
-        spice_type = default_spice_type(section, name, spice_type)
-        spice_class = Spice.spice_class(spice_type, None)
-        if spice_class is None:
-            raise SpiceError(f"{filename}@{start + 1}: unknown spice type {spice_type!r}")
-        return spice_class(self, section=section, name=name, start=start, end=None)
+        spyce_type = default_spyce_type(section, name, spyce_type)
+        spyce_class = Spyce.spyce_class(spyce_type, None)
+        if spyce_class is None:
+            raise SpyceError(f"{filename}@{start + 1}: unknown spyce type {spyce_type!r}")
+        return spyce_class(self, section=section, name=name, start=start, end=None)
 
     def _parse_lines(self):
         filename = self.filename
         lines = self.lines
-        re_spice = self.__re_spice__
+        re_spyce = self.__re_spyce__
         re_section = self.__re_section__
-        spices = self.spices
+        spyces = self.spyces
 
-        spice = None
-        def _store_spice(line_index):
-            nonlocal spices, spice
-            if spice:
-                spice.end = line_index + 1
-                spices[spice.key] = spice
-                spice = None
+        spyce = None
+        def _store_spyce(line_index):
+            nonlocal spyces, spyce
+            if spyce:
+                spyce.end = line_index + 1
+                spyces[spyce.key] = spyce
+                spyce = None
 
         for cur_index, line in enumerate(lines):
             m_section = re_section.match(line)
             if m_section:
                 self.section[m_section['section']] = cur_index
 
-            m_spice = re_spice.match(line)
-            if m_spice:
+            m_spyce = re_spyce.match(line)
+            if m_spyce:
                 cur_section, cur_action, cur_name, cur_type = (
-                    m_spice['section'], m_spice['action'], m_spice['name'], m_spice['type'])
+                    m_spyce['section'], m_spyce['action'], m_spyce['name'], m_spyce['type'])
                 if cur_action == 'end':
-                    if spice and cur_section == spice.section and cur_name == spice.name:
-                        _store_spice(cur_index)
+                    if spyce and cur_section == spyce.section and cur_name == spyce.name:
+                        _store_spyce(cur_index)
                         continue
                     else:
-                        raise SpiceError(f'{filename}@{cur_index + 1}: unexpected directive "{cur_section} {cur_action} {cur_name}"')
+                        raise SpyceError(f'{filename}@{cur_index + 1}: unexpected directive "{cur_section} {cur_action} {cur_name}"')
                 elif cur_action == 'start':
-                    if spice:
-                        # empty spice
-                        _store_spice(spice.start)
-                    spice = self._build_spice(cur_index, cur_section, cur_name, cur_type)
-                    if spice.key in self.spices:
-                        raise SpiceError(f"{filename}@{spice.start + 1}: duplicated spice {spice!r}")
+                    if spyce:
+                        # empty spyce
+                        _store_spyce(spyce.start)
+                    spyce = self._build_spyce(cur_index, cur_section, cur_name, cur_type)
+                    if spyce.key in self.spyces:
+                        raise SpyceError(f"{filename}@{spyce.start + 1}: duplicated spyce {spyce!r}")
                     continue
-        if spice:
-            _store_spice(spice.start)
+        if spyce:
+            _store_spyce(spyce.start)
 
     def _update_lines(self, l_start, l_diff):
-        for spice in self.spices.values():
-            if spice.start > l_start:
-                spice.start += l_diff
-                spice.end += l_diff
+        for spyce in self.spyces.values():
+            if spyce.start > l_start:
+                spyce.start += l_diff
+                spyce.end += l_diff
         for section in self.section:
             if self.section[section] is not None and self.section[section] > l_start:
                 self.section[section] += l_diff
 
     def __delitem__(self, key):
-        spice = self.spices.pop(key)
-        del self.lines[spice.start:spice.end]
-        self._update_lines(spice.start, -(spice.end - spice.start))
+        spyce = self.spyces.pop(key)
+        del self.lines[spyce.start:spyce.end]
+        self._update_lines(spyce.start, -(spyce.end - spyce.start))
         self.content_version += 1
 
     def __setitem__(self, key, dose):
@@ -113,27 +113,27 @@ class Dish(MutableMapping):
             raise TypeError(dose)
         section = dose.section
         name = dose.name
-        spice_type = dose.spice_type
+        spyce_type = dose.spyce_type
         content = dose.content()
 
-        spice_class = Spice.spice_class(spice_type, None)
-        if spice_class is None:
-            raise SpiceError(f'unknown spice type {spice_type!r}')
-        key = spice_class.spice_key(section, name)
+        spyce_class = Spyce.spyce_class(spyce_type, None)
+        if spyce_class is None:
+            raise SpyceError(f'unknown spyce type {spyce_type!r}')
+        key = spyce_class.spyce_key(section, name)
 
         self.content_version += 1
-        deleted_spice = self.get(key, None)
-        if deleted_spice:
+        deleted_spyce = self.get(key, None)
+        if deleted_spyce:
             # replace existing block
             del self[key]
-            start = deleted_spice.start
+            start = deleted_spyce.start
         else:
-            spc_ends = [spc.end for spc in self.spices.values() if spc.section == section]
+            spc_ends = [spc.end for spc in self.spyces.values() if spc.section == section]
             if spc_ends:
                 # append to the existing section
                 start = max(spc_ends) + 1
             else:
-                # create the first spice in the section
+                # create the first spyce in the section
                 if self.section[section]:
                     # use custom-specified section start
                     start =  self.section[section] + 1
@@ -146,19 +146,19 @@ class Dish(MutableMapping):
                         start = l_index
                     else:
                         start = len(self.lines)
-        spice_lines = [f'# spice: start {key}:{spice_type}\n']
-        spice_lines.extend(spice_class.encode(content))
-        spice_lines.append(f'# spice: end {key}:{spice_type}\n')
-        self.lines[start:start] = spice_lines
-        l_diff = len(spice_lines)
+        spyce_lines = [f'# spyce: start {key}:{spyce_type}\n']
+        spyce_lines.extend(spyce_class.encode(content))
+        spyce_lines.append(f'# spyce: end {key}:{spyce_type}\n')
+        self.lines[start:start] = spyce_lines
+        l_diff = len(spyce_lines)
         self._update_lines(start, l_diff)
-        spice = spice_class(self, section=section, name=name, start=start, end=start + len(spice_lines))
-        self.spices[key] = spice
+        spyce = spyce_class(self, section=section, name=name, start=start, end=start + len(spyce_lines))
+        self.spyces[key] = spyce
 
     @contextmanager
     def refactor(self, output_path=None, backup=False, backup_format=DEFAULT_BACKUP_FORMAT):
         if self.path is None:
-            raise SpiceError('{self}: path is not set')
+            raise SpyceError('{self}: path is not set')
         content_version = self.content_version
         yield
         if output_path is None:
@@ -187,13 +187,13 @@ class Dish(MutableMapping):
                 shutil.copymode(self.path, output_path)
 
     def __len__(self):
-        return len(self.spices)
+        return len(self.spyces)
 
     def __iter__(self):
-        yield from self.spices
+        yield from self.spyces
 
     def __getitem__(self, key):
-        return self.spices[key]
+        return self.spyces[key]
 
     def __repr__(self):
         return f'{type(self).__name__}({self.file!r})'

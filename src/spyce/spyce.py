@@ -1,7 +1,7 @@
 __all__ = [
-    'Spice',
-    'TextSpice',
-    'BytesSpice',
+    'Spyce',
+    'TextSpyce',
+    'BytesSpyce',
 ]
 
 import abc
@@ -10,52 +10,52 @@ import inspect
 
 from pathlib import Path
 
-from .error import SpiceError
+from .error import SpyceError
 
 
-class SpiceMeta(abc.ABCMeta):
+class SpyceMeta(abc.ABCMeta):
     def __new__(mcls, class_name, class_bases, class_dict):
         cls = super().__new__(mcls, class_name, class_bases, class_dict)
         if not inspect.isabstract(cls):
-            cls.__registry__[cls.class_spice_type()] = cls
+            cls.__registry__[cls.class_spyce_type()] = cls
         return cls
 
 
 UNDEF = object()
 
-class Spice(metaclass=SpiceMeta):
+class Spyce(metaclass=SpyceMeta):
     __registry__ = {}
 
     def __init__(self, dish, section, name, start, end, args=None):
         self.dish = dish
         self.section = section
         self.name = name
-        self.key = self.spice_key(section, name)
+        self.key = self.spyce_key(section, name)
         self.start = start
         self.end = end
         self.args = args
 
     @classmethod
-    def spice_class(cls, spice_type, /, default=UNDEF):
+    def spyce_class(cls, spyce_type, /, default=UNDEF):
         if default is UNDEF:
-            return cls.__registry__[spice_type]
+            return cls.__registry__[spyce_type]
         else:
-            return cls.__registry__.get(spice_type, default)
+            return cls.__registry__.get(spyce_type, default)
 
     @staticmethod
-    def spice_key(section, name):
+    def spyce_key(section, name):
         return f'{section}/{name}'
 
     def fq_key(self):
-        return f'{self.section}/{self.name}:{self.spice_type}'
+        return f'{self.section}/{self.name}:{self.spyce_type}'
 
     @property
-    def spice_type(self):
-        return self.class_spice_type()
+    def spyce_type(self):
+        return self.class_spyce_type()
 
     @classmethod
     @abc.abstractmethod
-    def class_spice_type(cls):
+    def class_spyce_type(cls):
         raise NotImplementedError()
 
     @classmethod
@@ -88,7 +88,7 @@ class Spice(metaclass=SpiceMeta):
         return f'{type(self).__name__}({self.dish!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r}, {self.args!r})'
 
 
-class TextSpice(Spice):
+class TextSpyce(Spyce):
     @classmethod
     def encode(cls, content):
         return [line + '\n' for line in content.split('\n')]
@@ -98,11 +98,11 @@ class TextSpice(Spice):
         return ''.join(lines)
 
     @classmethod
-    def class_spice_type(cls):
+    def class_spyce_type(cls):
         return 'text'
 
 
-class BytesSpice(Spice):
+class BytesSpyce(Spyce):
     __data_line_length__ = 120
     __data_prefix__ = '#|'
 
@@ -125,5 +125,5 @@ class BytesSpice(Spice):
         return ''.join(self.get_lines())
 
     @classmethod
-    def class_spice_type(cls):
+    def class_spyce_type(cls):
         return 'bytes'

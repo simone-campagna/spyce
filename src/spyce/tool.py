@@ -30,8 +30,9 @@ def add_input_argument(parser):
 
 def add_output_argument(parser):
     parser.add_argument(
-        '-o', '--output-file',
+        'output_file',
         metavar='output',
+        nargs='?',
         help='do not change input file in-place, write output file instead')
 
 
@@ -61,10 +62,10 @@ def type_pattern(value):
     lst = rem.split(':', 1)
     if len(lst) == 1:
         name = rem
-        spice_type = '*'
+        spyce_type = '*'
     else:
-        name, spice_type = lst
-    fq_key = f'{section or "*"}/{name or "*"}:{spice_type or "*"}'
+        name, spyce_type = lst
+    fq_key = f'{section or "*"}/{name or "*"}:{spyce_type or "*"}'
     if negated:
         return lambda lst: [i for i in lst if not fnmatch.fnmatch(i, fq_key)]
     else:
@@ -80,13 +81,13 @@ def add_filters_argument(parser, required=False):
         action='append',
         default=[],
         required=required,
-        help="add pattern to filter spices, e.g. 'source/api', '~data/x.tgz', ':bytes'")
+        help="add pattern to filter spyces, e.g. 'source/api', '~data/x.tgz', ':bytes'")
 
 
 def _filtered_keys(dish, filters):
     mp = {}
-    for key, spice in dish.items():
-        fq_key = spice.fq_key()
+    for key, spyce in dish.items():
+        fq_key = spyce.fq_key()
         mp[fq_key] = key
     fq_keys = list(mp)
     for filt in filters:
@@ -97,45 +98,47 @@ def _filtered_keys(dish, filters):
 def main_list(input_file, filters, show_lines=False, show_header=True):
     dish = Dish(input_file)
     table = []
-    spices = []
+    spyces = []
     keys = _filtered_keys(dish, filters)
     for key in keys:
-        spice = dish[key]
-        num_chars = len(spice.get_text(headers=True))
-        table.append((spice.section, spice.name, spice.spice_type, f'{spice.start+1}:{spice.end+1}', str(num_chars)))
-        spices.append(spice)
+        spyce = dish[key]
+        num_chars = len(spyce.get_text(headers=True))
+        table.append((spyce.section, spyce.name, spyce.spyce_type, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
+        spyces.append(spyce)
     if table:
         if show_header:
+            keys.insert(0, None)
             table.insert(0, ['section', 'name', 'type', 'lines', 'size'])
         mlen = [max(len(row[c]) for row in table) for c in range(len(table[0]))]
         if show_header:
+            keys.insert(1, None)
             table.insert(1, ['-' * ml for ml in mlen])
 
         fmt = ' '.join(f'{{:{ml}s}}' for ml in mlen)
-        for idx, row in enumerate(table):
+        for key, row in zip(keys, table):
             print(fmt.format(*row))
-            if show_lines:
-                spice = dish[keys[idx]]
-                for ln, line in enumerate(spice.get_lines(headers=True)):
-                    line_no = ln + spice.start + 1
+            if show_lines and key is not None:
+                spyce = dish[key]
+                for ln, line in enumerate(spyce.get_lines(headers=True)):
+                    line_no = ln + spyce.start + 1
                     print(f'  {line_no:<6d} {line.rstrip()}')
 
 
 class DoseBuilder:
-    def build_dose(self, name, spice_type):
+    def build_dose(self, name, spyce_type):
         raise NotImplementedError()
 
     @classmethod
-    def _check_spice_type(cls, spice_type):
-        if spice_type not in {None, 'source', 'data'}:
-            raise ValueError(spice_type)
+    def _check_spyce_type(cls, spyce_type):
+        if spyce_type not in {None, 'source', 'data'}:
+            raise ValueError(spyce_type)
 
 
 class ApiDoseBuilder(DoseBuilder):
-    def build_dose(self, name, spice_type):
-        self._check_spice_type(spice_type)
+    def build_dose(self, name, spyce_type):
+        self._check_spyce_type(spyce_type)
         return ApiDose(
-            section='source', name=name, spice_type=spice_type)
+            section='source', name=name, spyce_type=spyce_type)
 
 
 class SourceDoseBuilder(DoseBuilder):
@@ -144,11 +147,11 @@ class SourceDoseBuilder(DoseBuilder):
         if not self.path.is_file():
             raise ValueError(path)
 
-    def build_dose(self, name, spice_type):
-        self._check_spice_type(spice_type)
+    def build_dose(self, name, spyce_type):
+        self._check_spyce_type(spyce_type)
         return FileDose(
             self.path,
-            section='source', name=name, spice_type=spice_type)
+            section='source', name=name, spyce_type=spyce_type)
 
 
 class FileDoseBuilder(DoseBuilder):
@@ -157,11 +160,11 @@ class FileDoseBuilder(DoseBuilder):
         if not self.path.is_file():
             raise ValueError(path)
 
-    def build_dose(self, name, spice_type):
-        self._check_spice_type(spice_type)
+    def build_dose(self, name, spyce_type):
+        self._check_spyce_type(spyce_type)
         return FileDose(
             self.path,
-            section='data', name=name, spice_type=spice_type)
+            section='data', name=name, spyce_type=spyce_type)
 
 
 class DirDoseBuilder(DoseBuilder):
@@ -170,19 +173,19 @@ class DirDoseBuilder(DoseBuilder):
         if not self.path.is_dir():
             raise ValueError(path)
 
-    def build_dose(self, name, spice_type):
-        self._check_spice_type(spice_type)
+    def build_dose(self, name, spyce_type):
+        self._check_spyce_type(spyce_type)
         return DirDose(
             self.path,
-            section='data', name=name, spice_type=spice_type)
+            section='data', name=name, spyce_type=spyce_type)
 
 
-def main_add(input_file, output_file, dose_builder, name, spice_type, backup, backup_format):
+def main_add(input_file, output_file, dose_builder, name, spyce_type, backup, backup_format):
     dish = Dish(input_file)
     with dish.refactor(output_file, backup=backup, backup_format=backup_format):
         dose = dose_builder.build_dose(
             name=name,
-            spice_type=spice_type)
+            spyce_type=spyce_type)
         dish[name] = dose
 
 
@@ -213,7 +216,7 @@ def type_dir(value):
 def main():
     parser = argparse.ArgumentParser(
         description=f'''\
-spyce {get_version()} - add spices to python source files
+spyce {get_version()} - add spyces to python source files
 ''',
     )
     parser.add_argument(
@@ -239,7 +242,7 @@ spyce {get_version()} - add spices to python source files
     ### list
     list_parser = subparsers.add_parser(
         'list',
-        description='list spices in python source file')
+        description='list spyces in python source file')
     list_parser.set_defaults(function=main_list)
     add_input_argument(list_parser)
     add_filters_argument(list_parser)
@@ -248,7 +251,7 @@ spyce {get_version()} - add spices to python source files
         dest='show_lines',
         action='store_true',
         default=False,
-        help='show spice')
+        help='show spyce')
     list_parser.add_argument(
         '-H', '--no-header',
         dest='show_header',
@@ -259,7 +262,7 @@ spyce {get_version()} - add spices to python source files
     ### add
     add_parser = subparsers.add_parser(
         'add',
-        description='add or replace spices in python source file')
+        description='add or replace spyces in python source file')
     add_parser.set_defaults(function=main_add)
     add_input_argument(add_parser)
     add_output_argument(add_parser)
@@ -267,15 +270,15 @@ spyce {get_version()} - add spices to python source files
 
     add_parser.add_argument(
         '-n', '--name',
-        required=True,
-        help='spice name')
+        default=None,
+        help='spyce name')
 
     add_parser.add_argument(
         '-t', '--type',
-        dest='spice_type',
+        dest='spyce_type',
         choices=['text', 'bytes'],
         default=None,
-        help="spice type (default: 'text' for source spices, else 'bytes')")
+        help="spyce type (default: 'text' for source spyces, else 'bytes')")
 
     c_group = add_parser.add_argument_group('dose')
     c_mgrp = add_parser.add_mutually_exclusive_group(required=True)
@@ -300,7 +303,7 @@ spyce {get_version()} - add spices to python source files
     ### del
     del_parser = subparsers.add_parser(
         'del',
-        description='remove spices from python source file')
+        description='remove spyces from python source file')
     del_parser.set_defaults(function=main_del)
     add_input_argument(del_parser)
     add_output_argument(del_parser)

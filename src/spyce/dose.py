@@ -5,11 +5,11 @@ import tarfile
 from pathlib import Path
 
 from .api import get_api
-from .error import SpiceError
+from .error import SpyceError
 
 
 __all__ = [
-    'default_spice_type',
+    'default_spyce_type',
     'Dose',
     'ApiDose',
     'FileDose',
@@ -17,32 +17,36 @@ __all__ = [
 ]
 
 
-def default_spice_type(section, name, spice_type):
-    if spice_type is None:
-        spice_type = 'text' if section == 'source' else 'bytes'
-    return spice_type
+def default_spyce_type(section, name, spyce_type):
+    if spyce_type is None:
+        spyce_type = 'text' if section == 'source' else 'bytes'
+    return spyce_type
 
 
 class Dose(abc.ABC):
-    def __init__(self, section, name, spice_type=None):
+    def __init__(self, section, name, spyce_type=None):
         self.section = section
+        if not isinstance(name, str):
+            raise TypeError(name)
+        invalid_chars = set('/:').intersection(name)
+        if invalid_chars:
+            chs = ''.join(invalid_chars)
+            raise SpyceError(f'invalid spyce name {name} - the following chars are not allowed: {chs!r}')
         self.name = name
-        self.spice_type = default_spice_type(section, name, spice_type)
+        self.spyce_type = default_spyce_type(section, name, spyce_type)
 
     @abc.abstractmethod
     def content(self):
         raise NotImplementedError()
 
 
-class ApiDose(Dose):
-    def content(self):
-        return get_api()
-
-
 class PathDose(Dose):
-    def __init__(self, path, section, name, spice_type=None):
-        super().__init__(section, name, spice_type=spice_type)
-        self.path = Path(path)
+    def __init__(self, path, section, name=None, spyce_type=None):
+        path = Path(path)
+        if name is None:
+            name = path.name
+        super().__init__(section, name, spyce_type=spyce_type)
+        self.path = path
         self.check()
 
     def check(self):
@@ -52,11 +56,11 @@ class PathDose(Dose):
 class FileDose(PathDose):
     def check(self):
         if not self.path.is_file():
-            raise SpiceError(f'{self.path} is not a file')
+            raise SpyceError(f'{self.path} is not a file')
 
     def content(self):
         mode = 'r'
-        if self.spice_type == 'text':
+        if self.spyce_type == 'text':
             mode += 'b'
         with open(self.path, mode) as fh:
             return fh.read()
@@ -65,9 +69,9 @@ class FileDose(PathDose):
 class DirDose(PathDose):
     def check(self):
         if not self.path.is_dir():
-            raise SpiceError(f'{self.path} is not a dir')
-        if self.spice_type != 'bytes':
-            raise SpiceError(f"dir spice type must be 'bytes'")
+            raise SpyceError(f'{self.path} is not a dir')
+        if self.spyce_type != 'bytes':
+            raise SpyceError(f"dir spyce type must be 'bytes'")
 
     def content(self):
         bf = io.BytesIO()
@@ -77,5 +81,10 @@ class DirDose(PathDose):
 
 
 class ApiDose(Dose):
+    def __init__(self, section, name=None, spyce_type=None):
+        if name is None:
+            name = 'spyce-api'
+        super().__init__(section, name, spyce_type=spyce_type)
+
     def content(self):
         return get_api()

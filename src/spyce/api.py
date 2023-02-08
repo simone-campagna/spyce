@@ -1,16 +1,20 @@
 __all__ = [
-    'get_spice',
+    'get_spyce',
     'get_api',
 ]
 
-# spice: start source/spice-api
+# spyce: start source/spyce-api
 SPYCE_API_VERSION = '0.1.0'
 
-def get_spice(key, file=__file__):
+class SpyceApiError(RuntimeError):
+    pass
+
+
+def get_spyce(key, file=__file__):
     import base64
     import re
-    re_spice = re.compile(rf'\# spice:\s+(?P<action>start|end)\s+{key}(?:\:(?P<type>\S+))?(?:\s+(?P<args>.*))?')
-    spice_lines = []
+    re_spyce = re.compile(rf'\# spyce:\s+(?P<action>start|end)\s+{key}(?:\:(?P<type>\S+))?(?:\s+(?P<args>.*))?')
+    spyce_lines = []
     with open(file, 'r') as fh:
         lines = fh.readlines()
     lst = key.split('/', 1)
@@ -20,28 +24,28 @@ def get_spice(key, file=__file__):
     else:
         section, name = lst
     key = f'{section}/{name}'
-    start, end, spice_type = None, None, None
+    start, end, spyce_type = None, None, None
     for line_index, line in enumerate(lines):
-        m_obj = re_spice.match(line)
+        m_obj = re_spyce.match(line)
         if m_obj:
             if m_obj['action'] == 'start':
                 start = line_index
-                spice_type = m_obj['type']
+                spyce_type = m_obj['type']
             else:
                 end = line_index + 1
     if start is None or end is None:
-        raise RuntimeError(f'file {file}: {key!r} not found')
-    spice_lines = lines[start+1:end-1]
-    if spice_type is None:
-        spice_type = 'text' if section == 'source' else 'bytes'
-    if spice_type == 'text':
-        return ''.join(spice_lines)
+        raise SpyceApiError(f'file {file}: spyce {key!r} not found')
+    spyce_lines = lines[start+1:end-1]
+    if spyce_type is None:
+        spyce_type = 'text' if section == 'source' else 'bytes'
+    if spyce_type == 'text':
+        return ''.join(spyce_lines)
     else:
         prefix = '#|'
-        data = ''.join(line[len(prefix):].strip() for line in spice_lines if line.startswith(prefix))
+        data = ''.join(line[len(prefix):].strip() for line in spyce_lines if line.startswith(prefix))
         return base64.b64decode(data)
-# spice: end source/spice-api
+# spyce: end source/spyce-api
 
 
 def get_api():
-    return get_spice('source/spice-api')
+    return get_spyce('source/spyce-api')

@@ -1,2 +1,2 @@
-class SpiceError(RuntimeError):
+class SpyceError(RuntimeError):
     pass
