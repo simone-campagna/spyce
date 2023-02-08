@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+
+import tempfile
+from pathlib import Path
+
+# spyce: section source
+
+def main():
+    with tempfile.TemporaryDirectory() as tmpd:
+        out_path = Path(tmpd) / (Path(__file__).name + '.xy.tar.gz')
+        with open(out_path, 'wb') as fh:
+            fh.write(get_spyce('xy'))
+    print('Hello, world')
+
+if __name__ == '__main__':
+    main()
+# spyce: section data
