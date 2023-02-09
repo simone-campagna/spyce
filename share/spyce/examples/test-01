@@ -6,10 +6,14 @@ from pathlib import Path
 # spyce: section source
 
 def main():
+    bsp = get_spyce('xy')
     with tempfile.TemporaryDirectory() as tmpd:
         out_path = Path(tmpd) / (Path(__file__).name + '.xy.tar.gz')
-        with open(out_path, 'wb') as fh:
-            fh.write(get_spyce('xy'))
+        print(f'saving file {out_path}')
+        bsp.write_file(out_path)
+        out_dir = Path(tmpd) / (Path(__file__).name + '-untar')
+        print(f'extracting dir {out_dir}')
+        bsp.untar(out_dir)
     print('Hello, world')
 
 if __name__ == '__main__':

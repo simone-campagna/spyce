@@ -17,6 +17,7 @@ from .dose import (
     ApiDose,
     FileDose,
     DirDose,
+    UrlDose,
 )
 from .version import get_version
 
@@ -180,6 +181,17 @@ class DirDoseBuilder(DoseBuilder):
             section='data', name=name, spyce_type=spyce_type)
 
 
+class UrlDoseBuilder(DoseBuilder):
+    def __init__(self, url):
+        self.url = url
+
+    def build_dose(self, name, spyce_type):
+        self._check_spyce_type(spyce_type)
+        return UrlDose(
+            self.url,
+            section='data', name=name, spyce_type=spyce_type)
+
+
 def main_add(input_file, output_file, dose_builder, name, spyce_type, backup, backup_format):
     dish = Dish(input_file)
     with dish.refactor(output_file, backup=backup, backup_format=backup_format):
@@ -298,6 +310,10 @@ spyce {get_version()} - add spyces to python source files
     c_mgrp.add_argument(
         '-d', '--dir',
         type=DirDoseBuilder,
+        **c_kwargs)
+    c_mgrp.add_argument(
+        '-u', '--url',
+        type=UrlDoseBuilder,
         **c_kwargs)
 
     ### del

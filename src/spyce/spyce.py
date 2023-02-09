@@ -119,7 +119,8 @@ class BytesSpyce(Spyce):
     @classmethod
     def decode(cls, lines):
         data_prefix = cls.__data_prefix__
-        return ''.join(line[len(data_prefix):].strip() for line in lines if line.startswith(data_prefix))
+        data = ''.join(line[len(data_prefix):].strip() for line in lines if line.startswith(data_prefix))
+        return base64.b64decode(data)
 
     def get_content(self):
         return ''.join(self.get_lines())
