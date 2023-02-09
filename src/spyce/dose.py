@@ -1,6 +1,8 @@
 import abc
 import io
 import tarfile
+import urllib.parse
+import urllib.request
 
 from pathlib import Path
 
@@ -14,6 +16,7 @@ __all__ = [
     'ApiDose',
     'FileDose',
     'DirDose',
+    'UrlDose',
 ]
 
 
@@ -34,6 +37,10 @@ class Dose(abc.ABC):
             raise SpyceError(f'invalid spyce name {name} - the following chars are not allowed: {chs!r}')
         self.name = name
         self.spyce_type = default_spyce_type(section, name, spyce_type)
+        self.check()
+
+    def check(self):
+        pass
 
     @abc.abstractmethod
     def content(self):
@@ -45,22 +52,19 @@ class PathDose(Dose):
         path = Path(path)
         if name is None:
             name = path.name
-        super().__init__(section, name, spyce_type=spyce_type)
         self.path = path
-        self.check()
-
-    def check(self):
-        pass
+        super().__init__(section, name, spyce_type=spyce_type)
 
 
 class FileDose(PathDose):
     def check(self):
+        super().check()
         if not self.path.is_file():
             raise SpyceError(f'{self.path} is not a file')
 
     def content(self):
         mode = 'r'
-        if self.spyce_type == 'text':
+        if self.spyce_type == 'bytes':
             mode += 'b'
         with open(self.path, mode) as fh:
             return fh.read()
@@ -68,6 +72,7 @@ class FileDose(PathDose):
 
 class DirDose(PathDose):
     def check(self):
+        super().check()
         if not self.path.is_dir():
             raise SpyceError(f'{self.path} is not a dir')
         if self.spyce_type != 'bytes':
@@ -80,11 +85,29 @@ class DirDose(PathDose):
         return bf.getvalue()
 
 
-class ApiDose(Dose):
-    def __init__(self, section, name=None, spyce_type=None):
+class UrlDose(Dose):
+    def __init__(self, url, section, name=None, spyce_type=None):
+        self.url = url
+        self.parsed_url = urllib.parse.urlparse(self.url)
         if name is None:
-            name = 'spyce-api'
+            name = Path(self.parsed_url.path).name
+        super().__init__(section, name, spyce_type=spyce_type)
+
+    def check(self):
+        super().check()
+
+    def content(self):
+        with urllib.request.urlopen(self.url) as response:
+            return response.read()
+
+
+class ApiDose(Dose):
+    def __init__(self, implementation, section, name=None, spyce_type=None):
+        self.name = name
+        self.implementation = implementation
+        if name is None:
+            name = 'spyce'
         super().__init__(section, name, spyce_type=spyce_type)
 
     def content(self):
-        return get_api()
+        return get_api(self.name, self.implementation)

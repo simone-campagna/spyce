@@ -131,7 +131,7 @@ class Dish(MutableMapping):
             spc_ends = [spc.end for spc in self.spyces.values() if spc.section == section]
             if spc_ends:
                 # append to the existing section
-                start = max(spc_ends) + 1
+                start = max(spc_ends)
             else:
                 # create the first spyce in the section
                 if self.section[section]:

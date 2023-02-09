@@ -26,14 +26,13 @@ UNDEF = object()
 class Spyce(metaclass=SpyceMeta):
     __registry__ = {}
 
-    def __init__(self, dish, section, name, start, end, args=None):
+    def __init__(self, dish, section, name, start, end):
         self.dish = dish
         self.section = section
         self.name = name
         self.key = self.spyce_key(section, name)
         self.start = start
         self.end = end
-        self.args = args
 
     @classmethod
     def spyce_class(cls, spyce_type, /, default=UNDEF):
@@ -85,7 +84,7 @@ class Spyce(metaclass=SpyceMeta):
         return self.key
 
     def __repr__(self):
-        return f'{type(self).__name__}({self.dish!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r}, {self.args!r})'
+        return f'{type(self).__name__}({self.dish!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r})'
 
 
 class TextSpyce(Spyce):
@@ -119,7 +118,8 @@ class BytesSpyce(Spyce):
     @classmethod
     def decode(cls, lines):
         data_prefix = cls.__data_prefix__
-        return ''.join(line[len(data_prefix):].strip() for line in lines if line.startswith(data_prefix))
+        data = ''.join(line[len(data_prefix):].strip() for line in lines if line.startswith(data_prefix))
+        return base64.b64decode(data)
 
     def get_content(self):
         return ''.join(self.get_lines())
