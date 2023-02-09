@@ -7,6 +7,7 @@ import sys
 
 from pathlib import Path
 
+from . import api
 from .log import (
     configure_logging,
     set_trace,
@@ -136,9 +137,26 @@ class DoseBuilder:
 
 
 class ApiDoseBuilder(DoseBuilder):
+    def __init__(self, name=None, api_implementation=None):
+        if name is not None and not api.is_valid_modulename(name):
+            raise ValueError(name)
+        self.name = name
+        self._implementation = api.default_api_implementation()
+
+    @property
+    def implementation(self):
+        return self._implementation
+
+    @implementation.setter
+    def implementation(self, value):
+        if value in api.get_api_implementations():
+            raise ValueError(value)
+        self._implementation = value
+
     def build_dose(self, name, spyce_type):
         self._check_spyce_type(spyce_type)
         return ApiDose(
+            implementation=self._implementation,
             section='source', name=name, spyce_type=spyce_type)
 
 
@@ -192,7 +210,13 @@ class UrlDoseBuilder(DoseBuilder):
             section='data', name=name, spyce_type=spyce_type)
 
 
-def main_add(input_file, output_file, dose_builder, name, spyce_type, backup, backup_format):
+def main_add(input_file, output_file, dose_builder, api_implementation, name, spyce_type, backup, backup_format):
+    if isinstance(dose_builder, str):
+        dose_builder = ApiDoseBuilder(dose_builder)
+    if api_implementation is not None:
+        if not isinstance(dose_builder, ApiDoseBuilder):
+            raise RuntimeError(f'-A/--api-implementation applies only to -a/--api')
+        dose_builder.implementation = api_implementation
     dish = Dish(input_file)
     with dish.refactor(output_file, backup=backup, backup_format=backup_format):
         dose = dose_builder.build_dose(
@@ -291,6 +315,12 @@ spyce {get_version()} - add spyces to python source files
         choices=['text', 'bytes'],
         default=None,
         help="spyce type (default: 'text' for source spyces, else 'bytes')")
+
+    parser.add_argument(
+        '-A', '--api-implementation',
+        choices=['inline', 'tmpfile', 'memory'],
+        default=None,
+        help='(advanced) set api implementation')
 
     c_group = add_parser.add_argument_group('dose')
     c_mgrp = add_parser.add_mutually_exclusive_group(required=True)

@@ -6,7 +6,7 @@ from pathlib import Path
 # spyce: section source
 
 def main():
-    bsp = get_spyce('xy')
+    bsp = spyce.get_spyce('xy')
     with tempfile.TemporaryDirectory() as tmpd:
         out_path = Path(tmpd) / (Path(__file__).name + '.xy.tar.gz')
         print(f'saving file {out_path}')

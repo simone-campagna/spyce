@@ -102,20 +102,12 @@ class UrlDose(Dose):
 
 
 class ApiDose(Dose):
-    def __init__(self, section, name=None, spyce_type=None):
+    def __init__(self, implementation, section, name=None, spyce_type=None):
+        self.name = name
+        self.implementation = implementation
         if name is None:
-            name = 'spyce-api'
+            name = 'spyce'
         super().__init__(section, name, spyce_type=spyce_type)
 
     def content(self):
-        return get_api()
-
-
-class ObfuscatedApiDose(Dose):
-    def __init__(self, section, name=None, spyce_type=None):
-        if name is None:
-            name = 'spyce-api'
-        super().__init__(section, name, spyce_type=spyce_type)
-
-    def content(self):
-        return get_obfuscated_api()
+        return get_api(self.name, self.implementation)

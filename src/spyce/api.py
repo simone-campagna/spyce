@@ -1,6 +1,11 @@
 __all__ = [
     'get_spyce',
+    'get_inline_api',
+    'get_tmpfile_api',
+    'get_memory_api',
     'get_api',
+    'default_api_implementation',
+    'get_api_implementations',
 ]
 
 # spyce: start source/spyce-api
@@ -66,9 +71,11 @@ class BytesSpyceObj(SpyceObj):
 
 
 def get_spyce(key, file=None):
-    import inspect, re, sys
     if file is None:
-        file = inspect.getfile(sys.modules[__name__])
+        import inspect
+        frame_info = inspect.getouterframes(inspect.currentframe())[1]
+        file = frame_info.filename
+    import re, sys
     spyce_lines = []
     with open(file, 'r') as fh:
         lines = fh.readlines()
@@ -79,7 +86,7 @@ def get_spyce(key, file=None):
     else:
         section, name = lst
     key = f'{section}/{name}'
-    re_spyce = re.compile(rf'\# spyce:\s+(?P<action>start|end)\s+{key}(?:\:(?P<type>\S+))?(?:\s+(?P<args>.*))?')
+    re_spyce = re.compile(rf'\# spyce:\s+(?P<action>start|end)\s+{key}(?:\:(?P<type>\S+))?\s*')
     start, end, spyce_type = None, None, None
     for line_index, line in enumerate(lines):
         m_obj = re_spyce.match(line)
@@ -100,51 +107,65 @@ def get_spyce(key, file=None):
 # spyce: end source/spyce-api
 
 
-def get_api():
-    return get_spyce('source/spyce-api').get_content()
-
-
-def get_tmpfile_api():
-    import base64, gzip
+def get_inline_api(name):
     source = get_spyce('source/spyce-api').get_content()
+    lines = [source]
+    lines.append('''
+class _SpyceNamespace:
+    pass
+
+{name} = _SpyceNamespace
+{name}.get_spyce = get_spyce
+''')
+    return '\n'.join(lines)
+
+
+def _compress_source(source):
+    import base64, gzip
     gz_source = gzip.compress(bytes(source, 'utf-8'))
     data = str(base64.b64encode(gz_source), 'utf-8')
-    lines = ['''\
+    data_lines = []
+    slen = 80
+    for idx in range(0, len(data), slen):
+        data_lines.append(f'        {data[idx:idx+slen]!r},')
+    return '\n'.join(data_lines)
+
+
+def get_tmpfile_api(name):
+    source = get_spyce('source/spyce-api').get_content()
+    data = _compress_source(source)
+    return f'''
 def _load_module(name):
     import tempfile, gzip, base64, atexit, shutil, sys, importlib.util
     from pathlib import Path
     tmp_path = Path(tempfile.mkdtemp())
+    # def cleanup():
+    #     input('clean?')
+    #     shutil.rmtree(tmp_path)
+    # atexit.register(cleanup)
     atexit.register(shutil.rmtree, tmp_path)
     tmp_file = tmp_path / (name + '.py')
 
     source = gzip.decompress(base64.b64decode(''.join([
-''']
-    slen = 80
-    for idx in range(0, len(data), slen):
-        lines.append(f'        {data[idx:idx+slen]!r},')
-    lines.append('''\
+''' + data + f'''
     ])))
     with open(tmp_file, 'wb') as tmp_f:
         tmp_f.write(source)
     spec = importlib.util.spec_from_file_location(name, str(tmp_file))
     module = importlib.util.module_from_spec(spec)
+    module.__file__ = __file__
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
-spyce = _load_module("spyce")
-''')
-    out = '\n'.join(lines)
-    return out
+{name} = _load_module("{name}")
+'''
 
 
-def get_memory_api():
-    import base64, gzip
+def get_memory_api(name):
     source = get_spyce('source/spyce-api').get_content()
-    gz_source = gzip.compress(bytes(source, 'utf-8'))
-    data = str(base64.b64encode(gz_source), 'utf-8')
-    lines = []
-    lines.append('''\
+    data = _compress_source(source)
+    return '''
 def _load_module(name):
     import base64, gzip, sys, importlib.abc, importlib.util
 
@@ -162,11 +183,7 @@ def _load_module(name):
             return f'/tmp/fake/{fullname}.py'
 
     source = gzip.decompress(base64.b64decode(''.join([
-''')
-    slen = 80
-    for idx in range(0, len(data), slen):
-        lines.append(f'        {data[idx:idx+slen]!r},')
-    lines.append('''\
+''' + data + f'''
     ])))
     spec = importlib.util.spec_from_loader(name, loader=StringLoader(source), origin='built-in')
     module = importlib.util.module_from_spec(spec)
@@ -178,11 +195,38 @@ def _load_module(name):
     #globals()[name] = module
     return module
 
-spyce = _load_module("spyce")
-''')
-    out = '\n'.join(lines)
-    return out
+{name} = _load_module("{name}")
+'''
+
+API_IMPLEMENTATION = {
+    'inline': get_inline_api,
+    'tmpfile': get_tmpfile_api,
+    'memory': get_memory_api,
+}
 
 
-get_api = get_memory_api
-# get_api = get_tmpfile_api
+DEFAULT_API_IMPLEMENTATION = 'memory'
+
+def get_api(name=None, implementation=None):
+    if name is None:
+        name = 'spyce'
+    if not is_valid_modulename(name):
+        raise ValueError(name)
+    if implementation is None:
+        implementation = DEFAULT_API_IMPLEMENTATION
+    # print('-->', name, implementation)
+    return API_IMPLEMENTATION[implementation](name)
+
+
+def default_api_implementation():
+    return DEFAULT_API_IMPLEMENTATION
+
+
+def get_api_implementations():
+    return list(API_IMPLEMENTATION)
+
+
+def is_valid_modulename(name):
+    import re
+    regex = re.compile(r'[a-zA-Z0-9_]\w*')
+    return bool(regex.match(name))
