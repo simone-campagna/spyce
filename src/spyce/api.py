@@ -72,9 +72,10 @@ class BytesSpyceObj(SpyceObj):
 
 def get_spyce(key, file=None):
     if file is None:
-        import inspect
-        frame_info = inspect.getouterframes(inspect.currentframe())[1]
-        file = frame_info.filename
+        file = __file__
+        # import inspect
+        # frame_info = inspect.getouterframes(inspect.currentframe())[1]
+        # file = frame_info.filename
     import re, sys
     spyce_lines = []
     with open(file, 'r') as fh:
@@ -109,15 +110,30 @@ def get_spyce(key, file=None):
 
 def get_inline_api(name):
     source = get_spyce('source/spyce-api').get_content()
-    lines = [source]
-    lines.append('''
-class _SpyceNamespace:
+    source += '''
+loc = locals()
+
+class SpyceNamespace:
     pass
 
-{name} = _SpyceNamespace
-{name}.get_spyce = get_spyce
-''')
-    return '\n'.join(lines)
+spyce_namespace = SpyceNamespace
+for l_var, l_obj in loc.items():
+    setattr(spyce_namespace, l_var, l_obj)
+
+return spyce_namespace
+'''
+    indent = '    '
+    indented_lines = []
+    for line in source.split('\n'):
+        indented_lines.append(indent + line)
+    indented_source = '\n'.join(indented_lines)
+    return f'''
+## spyce api implementation: inline
+def _build_spyce_namespace(name, file):
+{indented_source}
+
+{name} = _build_spyce_namespace({name!r}, __file__)
+'''
 
 
 def _compress_source(source):
@@ -135,14 +151,11 @@ def get_tmpfile_api(name):
     source = get_spyce('source/spyce-api').get_content()
     data = _compress_source(source)
     return f'''
-def _load_module(name):
+## spyce api implementation: tmpfile
+def _load_module_from_tmpfile(name, file):
     import tempfile, gzip, base64, atexit, shutil, sys, importlib.util
     from pathlib import Path
     tmp_path = Path(tempfile.mkdtemp())
-    # def cleanup():
-    #     input('clean?')
-    #     shutil.rmtree(tmp_path)
-    # atexit.register(cleanup)
     atexit.register(shutil.rmtree, tmp_path)
     tmp_file = tmp_path / (name + '.py')
 
@@ -153,12 +166,12 @@ def _load_module(name):
         tmp_f.write(source)
     spec = importlib.util.spec_from_file_location(name, str(tmp_file))
     module = importlib.util.module_from_spec(spec)
-    module.__file__ = __file__
+    module.__file__ = file
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
-{name} = _load_module("{name}")
+{name} = _load_module_from_tmpfile("{name}", __file__)
 '''
 
 
@@ -166,7 +179,8 @@ def get_memory_api(name):
     source = get_spyce('source/spyce-api').get_content()
     data = _compress_source(source)
     return '''
-def _load_module(name):
+## spyce api implementation: memory
+def _load_module_from_memory(name, file):
     import base64, gzip, sys, importlib.abc, importlib.util
 
     class StringLoader(importlib.abc.SourceLoader):
@@ -189,13 +203,10 @@ def _load_module(name):
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
-    module.__file__ = __file__
-    #exec(source, module.__dict__)
-    #module.__file__ = __file__
-    #globals()[name] = module
+    module.__file__ = file
     return module
 
-{name} = _load_module("{name}")
+{name} = _load_module_from_memory("{name}", __file__)
 '''
 
 API_IMPLEMENTATION = {

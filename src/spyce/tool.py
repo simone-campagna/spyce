@@ -149,7 +149,7 @@ class ApiDoseBuilder(DoseBuilder):
 
     @implementation.setter
     def implementation(self, value):
-        if value in api.get_api_implementations():
+        if value not in api.get_api_implementations():
             raise ValueError(value)
         self._implementation = value
 
@@ -316,7 +316,7 @@ spyce {get_version()} - add spyces to python source files
         default=None,
         help="spyce type (default: 'text' for source spyces, else 'bytes')")
 
-    parser.add_argument(
+    add_parser.add_argument(
         '-A', '--api-implementation',
         choices=['inline', 'tmpfile', 'memory'],
         default=None,
