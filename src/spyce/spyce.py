@@ -10,8 +10,8 @@ __all__ = [
     'Spyce',
     'TextSpyce',
     'BytesSpyce',
-    'SpiceFarm',
-    'Dish',
+    'SpyceFarm',
+    'Curry',
 ]
 
 SPYCE_API_VERSION = '0.1.0'
@@ -44,8 +44,8 @@ UNDEF = object()
 class Spyce(metaclass=SpyceMeta):
     __registry__ = {}
 
-    def __init__(self, dish, section, name, start, end):
-        self.dish = dish
+    def __init__(self, curry, section, name, start, end):
+        self.curry = curry
         self.section = section
         self.name = name
         self.key = self.spyce_key(section, name)
@@ -90,7 +90,7 @@ class Spyce(metaclass=SpyceMeta):
             s_offset, e_offset = 0, 0
         else:
             s_offset, e_offset = 1, 1
-        return self.dish.lines[self.start+s_offset:self.end-e_offset]
+        return self.curry.lines[self.start+s_offset:self.end-e_offset]
 
     def get_text(self, headers=False):
         return ''.join(self.get_lines(headers=headers))
@@ -116,7 +116,7 @@ class Spyce(metaclass=SpyceMeta):
         return self.key
 
     def __repr__(self):
-        return f'{type(self).__name__}({self.dish!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r})'
+        return f'{type(self).__name__}({self.curry!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r})'
 
 
 class TextSpyce(Spyce):
@@ -228,7 +228,7 @@ def get_file():
         return inspect.getfile(sys.modules[__name__])
 
 
-class Dish(_spyce_MutableMapping):
+class Curry(_spyce_MutableMapping):
     __re_section__ = r'\# spyce:\s+section\s+(?P<section>source|data)\s*'
     __re_spyce__ = r'\# spyce:\s+(?P<action>start|end)\s+(?P<section>source|data)/(?P<name>[^\s\/\:]+)(?:\:(?P<type>\S+))?'
     __sections__ = {'source', 'data'}
@@ -414,9 +414,9 @@ class Dish(_spyce_MutableMapping):
 def get_spyce(key, file=None):
     if '/' not in key:
         key = 'data/' + key
-    dish = Dish(file)
-    if key not in dish:
+    curry = Curry(file)
+    if key not in curry:
         raise SpyceError(f'spyce {key} not found')
-    return dish[key]
+    return curry[key]
 
 # spyce: end source/spyce:text

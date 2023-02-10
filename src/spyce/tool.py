@@ -14,7 +14,7 @@ from .log import (
     trace_errors,
 )
 from .spyce import (
-    Dish,
+    Curry,
     DEFAULT_BACKUP_FORMAT,
 )
 from .farms import (
@@ -93,9 +93,9 @@ def add_filters_argument(parser, required=False):
         help="add pattern to filter spyces, e.g. 'source/api', '~data/x.tgz', ':bytes'")
 
 
-def _filtered_keys(dish, filters):
+def _filtered_keys(curry, filters):
     mp = {}
-    for key, spyce in dish.items():
+    for key, spyce in curry.items():
         fq_key = spyce.fq_key()
         mp[fq_key] = key
     fq_keys = list(mp)
@@ -111,12 +111,12 @@ def add_key_argument(parser):
 
 
 def main_list(input_file, filters, show_lines=False, show_header=True):
-    dish = Dish(input_file)
+    curry = Curry(input_file)
     table = []
     spyces = []
-    keys = _filtered_keys(dish, filters)
+    keys = _filtered_keys(curry, filters)
     for key in keys:
-        spyce = dish[key]
+        spyce = curry[key]
         num_chars = len(spyce.get_text(headers=True))
         table.append((spyce.section, spyce.name, spyce.spyce_type, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
         spyces.append(spyce)
@@ -133,7 +133,7 @@ def main_list(input_file, filters, show_lines=False, show_header=True):
         for key, row in zip(keys, table):
             print(fmt.format(*row))
             if show_lines and key is not None:
-                spyce = dish[key]
+                spyce = curry[key]
                 for ln, line in enumerate(spyce.get_lines(headers=True)):
                     line_no = ln + spyce.start + 1
                     print(f'  {line_no:<6d} {line.rstrip()}')
@@ -170,27 +170,27 @@ class SpyceFarmType:
 
 
 def main_add(input_file, output_file, spyce_farm_builder, section, name, spyce_type, backup, backup_format):
-    dish = Dish(input_file)
-    with dish.refactor(output_file, backup=backup, backup_format=backup_format):
+    curry = Curry(input_file)
+    with curry.refactor(output_file, backup=backup, backup_format=backup_format):
         spyce_farm =spyce_farm_builder(
             section=section,
             name=name,
             spyce_type=spyce_type)
-        dish[name] = spyce_farm
+        curry[name] = spyce_farm
 
 
 def main_extract(input_file, output_file, key):
-    dish = Dish(input_file)
-    spyce = dish[key]
+    curry = Curry(input_file)
+    spyce = curry[key]
     spyce.write_file(output_file)
 
 
 def main_del(input_file, output_file, filters, backup, backup_format):
-    dish = Dish(input_file)
-    keys = _filtered_keys(dish, filters)
-    with dish.refactor(output_file, backup=backup, backup_format=backup_format):
+    curry = Curry(input_file)
+    keys = _filtered_keys(curry, filters)
+    with curry.refactor(output_file, backup=backup, backup_format=backup_format):
         for key in keys:
-            del dish[key]
+            del curry[key]
 
 
 def main():
