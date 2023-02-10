@@ -1,5 +1,12 @@
+import base64
+import gzip
+import re
+
+from . import spyce
+
+
 __all__ = [
-    'get_spyce',
+#    'get_spyce',
     'get_inline_api',
     'get_tmpfile_api',
     'get_memory_api',
@@ -8,108 +15,9 @@ __all__ = [
     'get_api_implementations',
 ]
 
-# spyce: start source/spyce-api
-SPYCE_API_VERSION = '0.1.0'
-
-class SpyceApiError(RuntimeError):
-    pass
-
-
-class SpyceObj:
-    def __init__(self, lines, start, end):
-        self.start = start
-        self.end = end
-        self._spyce_lines = lines[start+1:end-1]
-        self._text = ''.join(self._spyce_lines)
-        self._content = self._build_content(self._spyce_lines)
-
-    def _build_content(self, path):
-        return self._text
-
-    def _build_path(self, path):
-        from pathlib import Path
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
-
-    def _file_mode(self):
-        return 'w'
-
-    def get_text(self):
-        return self._text
-
-    def get_content(self):
-        return self._content
-
-    def write_file(self, path):
-        path = self._build_path(path)
-        with open(path, self._file_mode()) as file:
-            file.write(self._content)
-
-
-class TextSpyceObj(SpyceObj):
-    def _file_mode(self):
-        return 'w'
-
-
-class BytesSpyceObj(SpyceObj):
-    def _build_content(self, path):
-        import base64
-        prefix = '#|'
-        data = ''.join(line[len(prefix):].strip() for line in self._spyce_lines if line.startswith(prefix))
-        return base64.b64decode(data)
-
-    def _file_mode(self):
-        return 'wb'
-
-    def untar(self, path, mode='r|*'):
-        import io, tarfile
-        path = self._build_path(path)
-        b_file = io.BytesIO(self._content)
-        with tarfile.open(fileobj=b_file, mode=mode) as t_file:
-            t_file.extractall(path)
-
-
-def get_spyce(key, file=None):
-    if file is None:
-        file = __file__
-        # import inspect
-        # frame_info = inspect.getouterframes(inspect.currentframe())[1]
-        # file = frame_info.filename
-    import re, sys
-    spyce_lines = []
-    with open(file, 'r') as fh:
-        lines = fh.readlines()
-    lst = key.split('/', 1)
-    if len(lst) == 1:
-        section = 'data'
-        name = key
-    else:
-        section, name = lst
-    key = f'{section}/{name}'
-    re_spyce = re.compile(rf'\# spyce:\s+(?P<action>start|end)\s+{key}(?:\:(?P<type>\S+))?\s*')
-    start, end, spyce_type = None, None, None
-    for line_index, line in enumerate(lines):
-        m_obj = re_spyce.match(line)
-        if m_obj:
-            if m_obj['action'] == 'start':
-                start = line_index
-                spyce_type = m_obj['type']
-            else:
-                end = line_index + 1
-    if start is None or end is None:
-        raise SpyceApiError(f'file {file}: spyce {key!r} not found')
-    if spyce_type is None:
-        spyce_type = 'text' if section == 'source' else 'bytes'
-    if spyce_type == 'text':
-        return TextSpyceObj(lines, start, end)
-    else:
-        return BytesSpyceObj(lines, start, end)
-# spyce: end source/spyce-api
-
 
 def get_inline_api(name):
-    source = get_spyce('source/spyce-api').get_content()
+    source = spyce.get_spyce('source/spyce').get_content()
     source += '''
 loc = locals()
 
@@ -127,7 +35,7 @@ return spyce_namespace
     for line in source.split('\n'):
         indented_lines.append(indent + line)
     indented_source = '\n'.join(indented_lines)
-    return f'''
+    return f'''\
 ## spyce api implementation: inline
 def _build_spyce_namespace(name, file):
 {indented_source}
@@ -137,7 +45,6 @@ def _build_spyce_namespace(name, file):
 
 
 def _compress_source(source):
-    import base64, gzip
     gz_source = gzip.compress(bytes(source, 'utf-8'))
     data = str(base64.b64encode(gz_source), 'utf-8')
     data_lines = []
@@ -148,9 +55,9 @@ def _compress_source(source):
 
 
 def get_tmpfile_api(name):
-    source = get_spyce('source/spyce-api').get_content()
+    source = spyce.get_spyce('source/spyce').get_content()
     data = _compress_source(source)
-    return f'''
+    return f'''\
 ## spyce api implementation: tmpfile
 def _load_module_from_tmpfile(name, file):
     import tempfile, gzip, base64, atexit, shutil, sys, importlib.util
@@ -160,7 +67,7 @@ def _load_module_from_tmpfile(name, file):
     tmp_file = tmp_path / (name + '.py')
 
     source = gzip.decompress(base64.b64decode(''.join([
-''' + data + f'''
+{data}
     ])))
     with open(tmp_file, 'wb') as tmp_f:
         tmp_f.write(source)
@@ -176,9 +83,9 @@ def _load_module_from_tmpfile(name, file):
 
 
 def get_memory_api(name):
-    source = get_spyce('source/spyce-api').get_content()
+    source = spyce.get_spyce('source/spyce').get_content()
     data = _compress_source(source)
-    return '''
+    return f'''\
 ## spyce api implementation: memory
 def _load_module_from_memory(name, file):
     import base64, gzip, sys, importlib.abc, importlib.util
@@ -194,10 +101,10 @@ def _load_module_from_memory(name, file):
             return self.data
 
         def get_filename(self, fullname):
-            return f'/tmp/fake/{fullname}.py'
+            return f'/tmp/fake/{{fullname}}.py'
 
     source = gzip.decompress(base64.b64decode(''.join([
-''' + data + f'''
+{data}
     ])))
     spec = importlib.util.spec_from_loader(name, loader=StringLoader(source), origin='built-in')
     module = importlib.util.module_from_spec(spec)
@@ -238,6 +145,5 @@ def get_api_implementations():
 
 
 def is_valid_modulename(name):
-    import re
     regex = re.compile(r'[a-zA-Z0-9_]\w*')
     return bool(regex.match(name))
