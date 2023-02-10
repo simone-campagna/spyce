@@ -57,7 +57,7 @@ def add_backup_argument(parser):
         help=f'set backup format (default: {DEFAULT_BACKUP_FORMAT!r}')
 
 
-def type_pattern(value):
+def filter_pattern(value):
     negated = False
     if value.startswith('~'):
         value = value[1:]
@@ -86,14 +86,20 @@ def add_filters_argument(parser, required=False):
         '-f', '--filter',
         dest='filters',
         metavar='[~][section/][name][:type]',
-        type=type_pattern,
+        type=filter_pattern,
         action='append',
         default=[],
         required=required,
         help="add pattern to filter spyces, e.g. 'source/api', '~data/x.tgz', ':bytes'")
 
 
-def _filtered_keys(curry, filters):
+def _filtered_keys(curry, key, filters):
+    if key is not None:
+        if key in curry:
+            return [key]
+        else:
+            raise KeyError(key)
+
     mp = {}
     for key, spyce in curry.items():
         fq_key = spyce.fq_key()
@@ -104,17 +110,25 @@ def _filtered_keys(curry, filters):
     return [mp[fq_key] for fq_key in fq_keys]
 
 
-def add_key_argument(parser):
+def add_key_argument(parser, required=False):
     parser.add_argument(
-        'key',
+        '-k', '--key',
+        required=required,
         help='spyce key (section/name)')
 
 
-def main_list(input_file, filters, show_lines=False, show_header=True):
+def add_key_filters_argument(parser, required=False):
+    kf_group = parser.add_argument_group('key/filter')
+    kf_mgrp = kf_group.add_mutually_exclusive_group(required=required)
+    add_key_argument(kf_mgrp, required=False)
+    add_filters_argument(kf_mgrp, required=False)
+
+
+def main_list(input_file, key, filters, show_lines=False, show_header=True):
     curry = Curry(input_file)
     table = []
     spyces = []
-    keys = _filtered_keys(curry, filters)
+    keys = _filtered_keys(curry, key, filters)
     for key in keys:
         spyce = curry[key]
         num_chars = len(spyce.get_text(headers=True))
@@ -145,14 +159,14 @@ class SpyceFarmType:
         def __init__(self, spyce_farm_class, value):
             self.spyce_farm_class = spyce_farm_class
             self.value = value
-    
+
         def __call__(self, section, name, spyce_type):
             obj = self.spyce_farm_class(self.value, section=section, name=name, spyce_type=spyce_type)
             return obj
-    
+
         def __str__(self):
             return self.value
-    
+
         def __repr__(self):
             return self.value
             #return f'{type(self).__name__}({self.spyce_farm_class.__name__}, {self.value})'
@@ -185,9 +199,9 @@ def main_extract(input_file, output_file, key):
     spyce.write_file(output_file)
 
 
-def main_del(input_file, output_file, filters, backup, backup_format):
+def main_del(input_file, output_file, key, filters, backup, backup_format):
     curry = Curry(input_file)
-    keys = _filtered_keys(curry, filters)
+    keys = _filtered_keys(curry, key, filters)
     with curry.refactor(output_file, backup=backup, backup_format=backup_format):
         for key in keys:
             del curry[key]
@@ -225,7 +239,7 @@ spyce {get_version()} - add spyces to python source files
         description='list spyces in python source file')
     list_parser.set_defaults(function=main_list)
     add_input_argument(list_parser)
-    add_filters_argument(list_parser)
+    add_key_filters_argument(list_parser)
     list_parser.add_argument(
         '-l', '--lines',
         dest='show_lines',
@@ -310,7 +324,7 @@ spyce {get_version()} - add spyces to python source files
     add_input_argument(del_parser)
     add_output_argument(del_parser)
     add_backup_argument(del_parser)
-    add_filters_argument(del_parser, required=True)
+    add_key_filters_argument(del_parser, required=True)
 
 
     ### parsing:
