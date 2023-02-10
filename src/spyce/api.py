@@ -35,7 +35,7 @@ return spyce_namespace
     for line in source.split('\n'):
         indented_lines.append(indent + line)
     indented_source = '\n'.join(indented_lines)
-    return f'''
+    return f'''\
 ## spyce api implementation: inline
 def _build_spyce_namespace(name, file):
 {indented_source}
@@ -57,7 +57,7 @@ def _compress_source(source):
 def get_tmpfile_api(name):
     source = spyce.get_spyce('source/spyce').get_content()
     data = _compress_source(source)
-    return f'''
+    return f'''\
 ## spyce api implementation: tmpfile
 def _load_module_from_tmpfile(name, file):
     import tempfile, gzip, base64, atexit, shutil, sys, importlib.util
@@ -85,7 +85,7 @@ def _load_module_from_tmpfile(name, file):
 def get_memory_api(name):
     source = spyce.get_spyce('source/spyce').get_content()
     data = _compress_source(source)
-    return f'''
+    return f'''\
 ## spyce api implementation: memory
 def _load_module_from_memory(name, file):
     import base64, gzip, sys, importlib.abc, importlib.util

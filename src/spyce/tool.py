@@ -34,12 +34,15 @@ def add_input_argument(parser):
         help='input python file')
 
 
-def add_output_argument(parser):
+def add_output_argument(parser, optional=True):
+    kwargs = {}
+    if optional:
+        kwargs['nargs'] = '?'
     parser.add_argument(
         'output_file',
         metavar='output',
-        nargs='?',
-        help='do not change input file in-place, write output file instead')
+        help='do not change input file in-place, write output file instead',
+        **kwargs)
 
 
 def add_backup_argument(parser):
@@ -99,6 +102,12 @@ def _filtered_keys(dish, filters):
     for filt in filters:
         fq_keys = filt(fq_keys)
     return [mp[fq_key] for fq_key in fq_keys]
+
+
+def add_key_argument(parser):
+    parser.add_argument(
+        'key',
+        help='spyce key (section/name)')
 
 
 def main_list(input_file, filters, show_lines=False, show_header=True):
@@ -168,6 +177,12 @@ def main_add(input_file, output_file, spyce_farm_builder, section, name, spyce_t
             name=name,
             spyce_type=spyce_type)
         dish[name] = spyce_farm
+
+
+def main_extract(input_file, output_file, key):
+    dish = Dish(input_file)
+    spyce = dish[key]
+    spyce.write_file(output_file)
 
 
 def main_del(input_file, output_file, filters, backup, backup_format):
@@ -277,6 +292,15 @@ spyce {get_version()} - add spyces to python source files
         '-u', '--url',
         type=SpyceFarmType(UrlSpyceFarm),
         **c_kwargs)
+
+    ### extract
+    extract_parser = subparsers.add_parser(
+        'extract',
+        description='extract a spyce object from python source file')
+    extract_parser.set_defaults(function=main_extract)
+    add_input_argument(extract_parser)
+    add_output_argument(extract_parser, optional=False)
+    add_key_argument(extract_parser)
 
     ### del
     del_parser = subparsers.add_parser(
