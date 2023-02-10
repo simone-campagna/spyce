@@ -13,8 +13,11 @@ from .log import (
     set_trace,
     trace_errors,
 )
-from .dish import Dish, DEFAULT_BACKUP_FORMAT
 from .spyce import (
+    Dish,
+    DEFAULT_BACKUP_FORMAT,
+)
+from .farms import (
     ApiSpyceFarm,
     FileSpyceFarm,
     SourceSpyceFarm,
@@ -135,7 +138,8 @@ class SpyceFarmType:
             self.value = value
     
         def __call__(self, section, name, spyce_type):
-            return self.spyce_farm_class(self.value, section=section, name=name, spyce_type=spyce_type)
+            obj = self.spyce_farm_class(self.value, section=section, name=name, spyce_type=spyce_type)
+            return obj
     
         def __str__(self):
             return self.value
@@ -246,7 +250,7 @@ spyce {get_version()} - add spyces to python source files
         default=None,
         help="spyce type (default: 'text' for source spyces, else 'bytes')")
 
-    c_group = add_parser.add_argument_group('dose')
+    c_group = add_parser.add_argument_group('spyce')
     c_mgrp = add_parser.add_mutually_exclusive_group(required=True)
     c_kwargs = {'dest': 'spyce_farm_builder'}
     c_mgrp.add_argument(
