@@ -6,9 +6,10 @@ from collections.abc import MutableMapping
 from contextlib import contextmanager
 from pathlib import Path
 
-from .dose import default_spyce_type, Dose
 from .error import SpyceError
-from .spyce import Spyce
+from .spyce import (
+    default_spyce_type, Spyce, SpyceFarm,
+)
 
 __all__ = [
     'Dish',
@@ -46,7 +47,8 @@ class Dish(MutableMapping):
 
     def _build_spyce(self, start, section, name, spyce_type):
         filename = self.filename
-        spyce_type = default_spyce_type(section, name, spyce_type)
+        if spyce_type is None:
+            spyce_type = default_spyce_type(section, name)
         spyce_class = Spyce.spyce_class(spyce_type, None)
         if spyce_class is None:
             raise SpyceError(f"{filename}@{start + 1}: unknown spyce type {spyce_type!r}")
@@ -108,15 +110,15 @@ class Dish(MutableMapping):
         self._update_lines(spyce.start, -(spyce.end - spyce.start))
         self.content_version += 1
 
-    def __setitem__(self, key, dose):
-        if not isinstance(dose, Dose):
-            raise TypeError(dose)
-        section = dose.section
-        name = dose.name
-        spyce_type = dose.spyce_type
-        content = dose.content()
+    def __setitem__(self, key, spyce_farm):
+        if not isinstance(spyce_farm, SpyceFarm):
+            raise TypeError(spyce_farm)
+        section = spyce_farm.section
+        name = spyce_farm.name
+        spyce_type = spyce_farm.spyce_type
+        content = spyce_farm.content()
+        spyce_class = spyce_farm.spyce_class()
 
-        spyce_class = Spyce.spyce_class(spyce_type, None)
         if spyce_class is None:
             raise SpyceError(f'unknown spyce type {spyce_type!r}')
         key = spyce_class.spyce_key(section, name)

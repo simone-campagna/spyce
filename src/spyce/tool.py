@@ -14,11 +14,12 @@ from .log import (
     trace_errors,
 )
 from .dish import Dish, DEFAULT_BACKUP_FORMAT
-from .dose import (
-    ApiDose,
-    FileDose,
-    DirDose,
-    UrlDose,
+from .spyce import (
+    ApiSpyceFarm,
+    FileSpyceFarm,
+    SourceSpyceFarm,
+    DirSpyceFarm,
+    UrlSpyceFarm,
 )
 from .version import get_version
 
@@ -126,103 +127,43 @@ def main_list(input_file, filters, show_lines=False, show_header=True):
                     print(f'  {line_no:<6d} {line.rstrip()}')
 
 
-class DoseBuilder:
-    def build_dose(self, name, spyce_type):
-        raise NotImplementedError()
 
-    @classmethod
-    def _check_spyce_type(cls, spyce_type):
-        if spyce_type not in {None, 'source', 'data'}:
-            raise ValueError(spyce_type)
+class SpyceFarmType:
+    class SpyceFarmBuilder:
+        def __init__(self, spyce_farm_class, value):
+            self.spyce_farm_class = spyce_farm_class
+            self.value = value
+    
+        def __call__(self, section, name, spyce_type):
+            return self.spyce_farm_class(self.value, section=section, name=name, spyce_type=spyce_type)
+    
+        def __str__(self):
+            return self.value
+    
+        def __repr__(self):
+            return self.value
+            #return f'{type(self).__name__}({self.spyce_farm_class.__name__}, {self.value})'
 
+    __registry__ = {}
 
-class ApiDoseBuilder(DoseBuilder):
-    def __init__(self, name=None, api_implementation=None):
-        if name is not None and not api.is_valid_modulename(name):
-            raise ValueError(name)
-        self.name = name
-        self._implementation = api.default_api_implementation()
+    def __init__(self, spyce_farm_class):
+        self.spyce_farm_class = spyce_farm_class
 
-    @property
-    def implementation(self):
-        return self._implementation
-
-    @implementation.setter
-    def implementation(self, value):
-        if value not in api.get_api_implementations():
-            raise ValueError(value)
-        self._implementation = value
-
-    def build_dose(self, name, spyce_type):
-        self._check_spyce_type(spyce_type)
-        return ApiDose(
-            implementation=self._implementation,
-            section='source', name=name, spyce_type=spyce_type)
+    def __call__(self, value):
+        key = (self.spyce_farm_class, value)
+        if key not in self.__registry__:
+            self.__registry__[key] = self.__class__.SpyceFarmBuilder(*key)
+        return self.__registry__[key]
 
 
-class SourceDoseBuilder(DoseBuilder):
-    def __init__(self, path):
-        self.path = Path(path)
-        if not self.path.is_file():
-            raise ValueError(path)
-
-    def build_dose(self, name, spyce_type):
-        self._check_spyce_type(spyce_type)
-        return FileDose(
-            self.path,
-            section='source', name=name, spyce_type=spyce_type)
-
-
-class FileDoseBuilder(DoseBuilder):
-    def __init__(self, path):
-        self.path = Path(path)
-        if not self.path.is_file():
-            raise ValueError(path)
-
-    def build_dose(self, name, spyce_type):
-        self._check_spyce_type(spyce_type)
-        return FileDose(
-            self.path,
-            section='data', name=name, spyce_type=spyce_type)
-
-
-class DirDoseBuilder(DoseBuilder):
-    def __init__(self, path):
-        self.path = Path(path)
-        if not self.path.is_dir():
-            raise ValueError(path)
-
-    def build_dose(self, name, spyce_type):
-        self._check_spyce_type(spyce_type)
-        return DirDose(
-            self.path,
-            section='data', name=name, spyce_type=spyce_type)
-
-
-class UrlDoseBuilder(DoseBuilder):
-    def __init__(self, url):
-        self.url = url
-
-    def build_dose(self, name, spyce_type):
-        self._check_spyce_type(spyce_type)
-        return UrlDose(
-            self.url,
-            section='data', name=name, spyce_type=spyce_type)
-
-
-def main_add(input_file, output_file, dose_builder, api_implementation, name, spyce_type, backup, backup_format):
-    if isinstance(dose_builder, str):
-        dose_builder = ApiDoseBuilder(dose_builder)
-    if api_implementation is not None:
-        if not isinstance(dose_builder, ApiDoseBuilder):
-            raise RuntimeError(f'-A/--api-implementation applies only to -a/--api')
-        dose_builder.implementation = api_implementation
+def main_add(input_file, output_file, spyce_farm_builder, section, name, spyce_type, backup, backup_format):
     dish = Dish(input_file)
     with dish.refactor(output_file, backup=backup, backup_format=backup_format):
-        dose = dose_builder.build_dose(
+        spyce_farm =spyce_farm_builder(
+            section=section,
             name=name,
             spyce_type=spyce_type)
-        dish[name] = dose
+        dish[name] = spyce_farm
 
 
 def main_del(input_file, output_file, filters, backup, backup_format):
@@ -231,22 +172,6 @@ def main_del(input_file, output_file, filters, backup, backup_format):
     with dish.refactor(output_file, backup=backup, backup_format=backup_format):
         for key in keys:
             del dish[key]
-
-
-def type_api():
-    return (ApiDose, None)
-
-
-def type_source(value):
-    return (SourceDose, value)
-
-
-def type_file(value):
-    return (FileDose, value)
-
-
-def type_dir(value):
-    return (DirDose, value)
 
 
 def main():
@@ -305,6 +230,11 @@ spyce {get_version()} - add spyces to python source files
     add_backup_argument(add_parser)
 
     add_parser.add_argument(
+        '-s', '--section',
+        default=None,
+        help='spyce section')
+
+    add_parser.add_argument(
         '-n', '--name',
         default=None,
         help='spyce name')
@@ -316,34 +246,32 @@ spyce {get_version()} - add spyces to python source files
         default=None,
         help="spyce type (default: 'text' for source spyces, else 'bytes')")
 
-    add_parser.add_argument(
-        '-A', '--api-implementation',
-        choices=['inline', 'tmpfile', 'memory'],
-        default=None,
-        help='(advanced) set api implementation')
-
     c_group = add_parser.add_argument_group('dose')
     c_mgrp = add_parser.add_mutually_exclusive_group(required=True)
-    c_kwargs = {'dest': 'dose_builder'}
+    c_kwargs = {'dest': 'spyce_farm_builder'}
     c_mgrp.add_argument(
         '-a', '--api',
-        action='store_const', const=ApiDoseBuilder(),
+        choices=[SpyceFarmType(ApiSpyceFarm)('inline'),
+                 SpyceFarmType(ApiSpyceFarm)('tmpfile'),
+                 SpyceFarmType(ApiSpyceFarm)('memory')],
+        type=SpyceFarmType(ApiSpyceFarm),
+        nargs='?', const=SpyceFarmType(ApiSpyceFarm)('memory'),
         **c_kwargs)
     c_mgrp.add_argument(
-        '-s', '--source',
-        type=SourceDoseBuilder,
+        '-p', '--py-source',
+        type=SpyceFarmType(SourceSpyceFarm),
         **c_kwargs)
     c_mgrp.add_argument(
         '-f', '--file',
-        type=FileDoseBuilder,
+        type=SpyceFarmType(FileSpyceFarm),
         **c_kwargs)
     c_mgrp.add_argument(
         '-d', '--dir',
-        type=DirDoseBuilder,
+        type=SpyceFarmType(DirSpyceFarm),
         **c_kwargs)
     c_mgrp.add_argument(
         '-u', '--url',
-        type=UrlDoseBuilder,
+        type=SpyceFarmType(UrlSpyceFarm),
         **c_kwargs)
 
     ### del
