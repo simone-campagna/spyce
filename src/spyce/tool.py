@@ -14,6 +14,7 @@ from .log import (
     trace_errors,
 )
 from .spyce import (
+    set_max_line_length,
     SpycyFile,
     DEFAULT_BACKUP_FORMAT,
 )
@@ -183,7 +184,9 @@ class SpyceFarmType:
         return self.__registry__[key]
 
 
-def main_add(input_file, output_file, spyce_farm_builder, section, name, spyce_type, backup, backup_format):
+def main_add(input_file, output_file, spyce_farm_builder, section, name, spyce_type, backup, backup_format, max_line_length):
+    if max_line_length is not None:
+        set_max_line_length(max_line_length)
     spycy_file = SpycyFile(input_file)
     with spycy_file.refactor(output_file, backup=backup, backup_format=backup_format):
         spyce_farm =spyce_farm_builder(
@@ -272,6 +275,11 @@ spyce {get_version()} - add spyces to python source files
         '-n', '--name',
         default=None,
         help='spyce name')
+
+    add_parser.add_argument(
+        '-m', '--max-line-length',
+        default=None,
+        help='set max data line length')
 
     add_parser.add_argument(
         '-t', '--type',

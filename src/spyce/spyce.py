@@ -8,15 +8,25 @@ from pathlib import Path as _spyce_Path
 
 
 __all__ = [
-    'Spyce',
-    'TextSpyce',
-    'BytesSpyce',
-    'SpycyFile',
+    'get_max_line_length', 'set_max_line_length',
+    'Spyce', 'TextSpyce', 'BytesSpyce',
+    'SpyceJar', 'SpycyFile',
 ]
 
 SPYCE_API_VERSION = '0.1.0'
 
 DEFAULT_BACKUP_FORMAT = '{path}.bck.{timestamp}'
+MAX_LINE_LENGTH = 120
+
+def get_max_line_length():
+    return MAX_LINE_LENGTH
+
+
+def set_max_line_length(value):
+    global MAX_LINE_LENGTH
+    MAX_LINE_LENGTH = int(value)
+
+
 class Timestamp(_spyce_datetime.datetime):
     def __str__(self):
         return self.strftime('%Y%m%d-%H%M%S')
@@ -134,7 +144,6 @@ class TextSpyce(Spyce):
 
 
 class BytesSpyce(Spyce):
-    __data_line_length__ = 120
     __data_prefix__ = '#|'
 
     @classmethod
@@ -142,10 +151,10 @@ class BytesSpyce(Spyce):
         import base64
         lines = []
         data = str(base64.b64encode(content), 'utf-8')
-        dlen = cls.__data_line_length__
-        for index in range(0, len(data), dlen):
-            lines.append(f'#|{data[index:index+dlen]}\n')
         data_prefix = cls.__data_prefix__
+        dlen = max(get_max_line_length() - len(data_prefix), len(data_prefix) + 1)
+        for index in range(0, len(data), dlen):
+            lines.append(f'{data_prefix}{data[index:index+dlen]}\n')
         return lines
 
     @classmethod
