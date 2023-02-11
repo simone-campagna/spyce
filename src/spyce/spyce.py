@@ -11,7 +11,7 @@ __all__ = [
     'Spyce',
     'TextSpyce',
     'BytesSpyce',
-    'Curry',
+    'SpycyFile',
 ]
 
 SPYCE_API_VERSION = '0.1.0'
@@ -116,7 +116,7 @@ class Spyce(metaclass=SpyceMeta):
         return self.fq_key
 
     def __repr__(self):
-        return f'{type(self).__name__}({self.curry!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r})'
+        return f'{type(self).__name__}({self.spycy_file!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r})'
 
 
 class TextSpyce(Spyce):
@@ -170,9 +170,9 @@ class BytesSpyce(Spyce):
             t_file.extractall(path)
 
 
-class SpyceItem:
-    def __init__(self, curry, section, name, spyce_type, start, end):
-        self.curry = curry
+class SpyceJar:
+    def __init__(self, spycy_file, section, name, spyce_type, start, end):
+        self.spycy_file = spycy_file
         self.section = section
         self.name = name
         if spyce_type is None:
@@ -184,7 +184,7 @@ class SpyceItem:
         self.end = end
         spyce_class = Spyce.spyce_class(spyce_type, None)
         if spyce_class is None:
-            raise SpyceError(f"{self.curry.filename}@{self.start + 1}: unknown spyce type {spyce_type!r}")
+            raise SpyceError(f"{self.spycy_file.filename}@{self.start + 1}: unknown spyce type {spyce_type!r}")
         self.spyce_class = spyce_class
         self._spyce = None
 
@@ -207,7 +207,7 @@ class SpyceItem:
             s_offset, e_offset = 0, 0
         else:
             s_offset, e_offset = 1, 1
-        return self.curry.lines[self.start+s_offset:self.end-e_offset]
+        return self.spycy_file.lines[self.start+s_offset:self.end-e_offset]
 
     def get_text(self, headers=True):
         return '\n'.join(self.get_lines(headers=headers))
@@ -216,7 +216,7 @@ class SpyceItem:
         return self.key
 
     def __repr__(self):
-        return f'{type(self).__name__}({self.curry!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r})'
+        return f'{type(self).__name__}({self.spycy_file!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r})'
 
 
 def get_file():
@@ -229,7 +229,7 @@ def get_file():
         return inspect.getfile(sys.modules[__name__])
 
 
-class Curry(_spyce_MutableMapping):
+class SpycyFile(_spyce_MutableMapping):
     __re_section__ = r'\# spyce:\s+section\s+(?P<section>source|data)\s*'
     __re_spyce__ = r'\# spyce:\s+(?P<action>start|end)\s+(?P<section>source|data)/(?P<name>[^\s\/\:]+)(?:\:(?P<type>\S+))?'
     __sections__ = {'source', 'data'}
@@ -249,7 +249,7 @@ class Curry(_spyce_MutableMapping):
         self.path = path
         self.filename = str(self.path) if self.path is not None else '<stdin>'
         self.lines = lines
-        self.spyce_items = {}
+        self.spyce_jars = {}
         self.section = {'source': None, 'data': None}
         self._parse_lines()
         self.content_version = 0
@@ -260,15 +260,15 @@ class Curry(_spyce_MutableMapping):
         lines = self.lines
         re_spyce = re.compile(self.__re_spyce__)
         re_section = re.compile(self.__re_section__)
-        spyce_items = self.spyce_items
+        spyce_jars = self.spyce_jars
 
-        spyce_item = None
-        def _store_spyce_item(line_index):
-            nonlocal spyce_items, spyce_item
-            if spyce_item:
-                spyce_item.end = line_index + 1
-                spyce_items[spyce_item.key] = spyce_item
-                spyce_item = None
+        spyce_jar = None
+        def _store_spyce_jar(line_index):
+            nonlocal spyce_jars, spyce_jar
+            if spyce_jar:
+                spyce_jar.end = line_index + 1
+                spyce_jars[spyce_jar.key] = spyce_jar
+                spyce_jar = None
 
         for cur_index, line in enumerate(lines):
             m_section = re_section.match(line)
@@ -280,35 +280,35 @@ class Curry(_spyce_MutableMapping):
                 cur_section, cur_action, cur_name, cur_type = (
                     m_spyce['section'], m_spyce['action'], m_spyce['name'], m_spyce['type'])
                 if cur_action == 'end':
-                    if spyce_item and cur_section == spyce_item.section and cur_name == spyce_item.name:
-                        _store_spyce_item(cur_index)
+                    if spyce_jar and cur_section == spyce_jar.section and cur_name == spyce_jar.name:
+                        _store_spyce_jar(cur_index)
                         continue
                     else:
                         raise SpyceError(f'{filename}@{cur_index + 1}: unexpected directive "{cur_section} {cur_action} {cur_name}"')
                 elif cur_action == 'start':
-                    if spyce_item:
+                    if spyce_jar:
                         # empty spyce
-                        _store_spyce_item(spyce_item.start)
-                    spyce_item = SpyceItem(self, section=cur_section, name=cur_name, spyce_type=cur_type, start=cur_index, end=None)
-                    if spyce_item.key in self.spyce_items:
-                        raise SpyceError(f"{filename}@{spyce_item.start + 1}: duplicated spyce {spyce_item}")
+                        _store_spyce_jar(spyce_jar.start)
+                    spyce_jar = SpyceJar(self, section=cur_section, name=cur_name, spyce_type=cur_type, start=cur_index, end=None)
+                    if spyce_jar.key in self.spyce_jars:
+                        raise SpyceError(f"{filename}@{spyce_jar.start + 1}: duplicated spyce {spyce_jar}")
                     continue
-        if spyce_item:
-            _store_spyce_item(spyce_item.start)
+        if spyce_jar:
+            _store_spyce_jar(spyce_jar.start)
 
     def _update_lines(self, l_start, l_diff):
-        for spyce_item in self.spyce_items.values():
-            if spyce_item.start > l_start:
-                spyce_item.start += l_diff
-                spyce_item.end += l_diff
+        for spyce_jar in self.spyce_jars.values():
+            if spyce_jar.start > l_start:
+                spyce_jar.start += l_diff
+                spyce_jar.end += l_diff
         for section in self.section:
             if self.section[section] is not None and self.section[section] > l_start:
                 self.section[section] += l_diff
 
     def __delitem__(self, key):
-        spyce_item = self.spyce_items.pop(key)
-        del self.lines[spyce_item.start:spyce_item.end]
-        self._update_lines(spyce_item.start, -(spyce_item.end - spyce_item.start))
+        spyce_jar = self.spyce_jars.pop(key)
+        del self.lines[spyce_jar.start:spyce_jar.end]
+        self._update_lines(spyce_jar.start, -(spyce_jar.end - spyce_jar.start))
         self.content_version += 1
 
     def __setitem__(self, key, spyce):
@@ -320,13 +320,13 @@ class Curry(_spyce_MutableMapping):
         content = spyce.get_content()
 
         self.content_version += 1
-        deleted_spyce_item = self.spyce_items.get(key, None)
-        if deleted_spyce_item:
+        deleted_spyce_jar = self.spyce_jars.get(key, None)
+        if deleted_spyce_jar:
             # replace existing block
             del self[key]
-            start = deleted_spyce_item.start
+            start = deleted_spyce_jar.start
         else:
-            spc_ends = [spc.end for spc in self.spyce_items.values() if spc.section == section]
+            spc_ends = [spc.end for spc in self.spyce_jars.values() if spc.section == section]
             if spc_ends:
                 # append to the existing section
                 start = max(spc_ends)
@@ -350,8 +350,8 @@ class Curry(_spyce_MutableMapping):
         self.lines[start:start] = spyce_lines
         l_diff = len(spyce_lines)
         self._update_lines(start, l_diff)
-        spyce_item = SpyceItem(self, section=section, name=name, spyce_type=spyce_type, start=start, end=start + len(spyce_lines))
-        self.spyce_items[key] = spyce_item
+        spyce_jar = SpyceJar(self, section=section, name=name, spyce_type=spyce_type, start=start, end=start + len(spyce_lines))
+        self.spyce_jars[key] = spyce_jar
 
     @_spyce_contextmanager
     def refactor(self, output_path=None, backup=False, backup_format=DEFAULT_BACKUP_FORMAT):
@@ -386,16 +386,16 @@ class Curry(_spyce_MutableMapping):
                 shutil.copymode(self.path, output_path)
 
     def __len__(self):
-        return len(self.spyce_items)
+        return len(self.spyce_jars)
 
     def __iter__(self):
-        yield from self.spyce_items
+        yield from self.spyce_jars
 
     def __getitem__(self, key):
-        return self.spyce_items[key].spyce
+        return self.spyce_jars[key].spyce
 
-    def get_spyce_item(self, key):
-        return self.spyce_items[key]
+    def get_spyce_jar(self, key):
+        return self.spyce_jars[key]
 
     def __repr__(self):
         return f'{type(self).__name__}({self.filename!r})'
@@ -404,9 +404,9 @@ class Curry(_spyce_MutableMapping):
 def get_spyce(key, file=None):
     if '/' not in key:
         key = 'data/' + key
-    curry = Curry(file)
-    if key not in curry:
+    spycy_file = SpycyFile(file)
+    if key not in spycy_file:
         raise SpyceError(f'spyce {key} not found')
-    return curry[key]
+    return spycy_file[key]
 
 # spyce: end source/spyce:text
