@@ -14,10 +14,11 @@ from .log import (
     trace_errors,
 )
 from .spyce import (
-    Curry,
+    set_max_line_length,
+    SpycyFile,
     DEFAULT_BACKUP_FORMAT,
 )
-from .farms import (
+from .spyce_farm import (
     ApiSpyceFarm,
     FileSpyceFarm,
     SourceSpyceFarm,
@@ -93,16 +94,16 @@ def add_filters_argument(parser, required=False):
         help="add pattern to filter spyces, e.g. 'source/api', '~data/x.tgz', ':bytes'")
 
 
-def _filtered_keys(curry, key, filters):
+def _filtered_keys(spycy_file, key, filters):
     if key is not None:
-        if key in curry:
+        if key in spycy_file:
             return [key]
         else:
             raise KeyError(key)
 
     mp = {}
-    for key, spyce in curry.items():
-        fq_key = spyce.fq_key()
+    for key, spyce in spycy_file.items():
+        fq_key = spyce.fq_key
         mp[fq_key] = key
     fq_keys = list(mp)
     for filt in filters:
@@ -125,13 +126,13 @@ def add_key_filters_argument(parser, required=False):
 
 
 def main_list(input_file, key, filters, show_lines=False, show_header=True):
-    curry = Curry(input_file)
+    spycy_file = SpycyFile(input_file)
     table = []
     spyces = []
-    keys = _filtered_keys(curry, key, filters)
+    keys = _filtered_keys(spycy_file, key, filters)
     for key in keys:
-        spyce = curry[key]
-        num_chars = len(spyce.get_text(headers=True))
+        spyce = spycy_file.get_spyce_jar(key)
+        num_chars = len(spyce.get_text())
         table.append((spyce.section, spyce.name, spyce.spyce_type, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
         spyces.append(spyce)
     if table:
@@ -147,8 +148,8 @@ def main_list(input_file, key, filters, show_lines=False, show_header=True):
         for key, row in zip(keys, table):
             print(fmt.format(*row))
             if show_lines and key is not None:
-                spyce = curry[key]
-                for ln, line in enumerate(spyce.get_lines(headers=True)):
+                spyce = spycy_file[key]
+                for ln, line in enumerate(spyce.get_lines()):
                     line_no = ln + spyce.start + 1
                     print(f'  {line_no:<6d} {line.rstrip()}')
 
@@ -183,28 +184,31 @@ class SpyceFarmType:
         return self.__registry__[key]
 
 
-def main_add(input_file, output_file, spyce_farm_builder, section, name, spyce_type, backup, backup_format):
-    curry = Curry(input_file)
-    with curry.refactor(output_file, backup=backup, backup_format=backup_format):
+def main_add(input_file, output_file, spyce_farm_builder, section, name, spyce_type, backup, backup_format, max_line_length):
+    if max_line_length is not None:
+        set_max_line_length(max_line_length)
+    spycy_file = SpycyFile(input_file)
+    with spycy_file.refactor(output_file, backup=backup, backup_format=backup_format):
         spyce_farm =spyce_farm_builder(
             section=section,
             name=name,
             spyce_type=spyce_type)
-        curry[name] = spyce_farm
+        spyce = spyce_farm()
+        spycy_file[spyce.key] = spyce
 
 
 def main_extract(input_file, output_file, key):
-    curry = Curry(input_file)
-    spyce = curry[key]
+    spycy_file = SpycyFile(input_file)
+    spyce = spycy_file[key]
     spyce.write_file(output_file)
 
 
 def main_del(input_file, output_file, key, filters, backup, backup_format):
-    curry = Curry(input_file)
-    keys = _filtered_keys(curry, key, filters)
-    with curry.refactor(output_file, backup=backup, backup_format=backup_format):
+    spycy_file = SpycyFile(input_file)
+    keys = _filtered_keys(spycy_file, key, filters)
+    with spycy_file.refactor(output_file, backup=backup, backup_format=backup_format):
         for key in keys:
-            del curry[key]
+            del spycy_file[key]
 
 
 def main():
@@ -271,6 +275,11 @@ spyce {get_version()} - add spyces to python source files
         '-n', '--name',
         default=None,
         help='spyce name')
+
+    add_parser.add_argument(
+        '-m', '--max-line-length',
+        default=None,
+        help='set max data line length')
 
     add_parser.add_argument(
         '-t', '--type',

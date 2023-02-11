@@ -47,10 +47,11 @@ def _build_spyce_namespace(name, file):
 def _compress_source(source):
     gz_source = gzip.compress(bytes(source, 'utf-8'))
     data = str(base64.b64encode(gz_source), 'utf-8')
-    data_lines = []
-    slen = 80
+    data_lines = ['"""\\']
+    slen = spyce.get_max_line_length()
     for idx in range(0, len(data), slen):
-        data_lines.append(f'        {data[idx:idx+slen]!r},')
+        data_lines.append(data[idx:idx+slen])
+    data_lines.append('"""')
     return '\n'.join(data_lines)
 
 
@@ -60,15 +61,14 @@ def get_tmpfile_api(name):
     return f'''\
 ## spyce api implementation: tmpfile
 def _load_module_from_tmpfile(name, file):
-    import tempfile, gzip, base64, atexit, shutil, sys, importlib.util
+    import re, tempfile, gzip, base64, atexit, shutil, sys, importlib.util
     from pathlib import Path
     tmp_path = Path(tempfile.mkdtemp())
     atexit.register(shutil.rmtree, tmp_path)
     tmp_file = tmp_path / (name + '.py')
 
-    source = gzip.decompress(base64.b64decode(''.join([
-{data}
-    ])))
+    r_spc = re.compile(r'\s')
+    source = gzip.decompress(base64.b64decode(r_spc.sub('', {data})))
     with open(tmp_file, 'wb') as tmp_f:
         tmp_f.write(source)
     spec = importlib.util.spec_from_file_location(name, str(tmp_file))
@@ -88,7 +88,7 @@ def get_memory_api(name):
     return f'''\
 ## spyce api implementation: memory
 def _load_module_from_memory(name, file):
-    import base64, gzip, sys, importlib.abc, importlib.util
+    import re, base64, gzip, sys, importlib.abc, importlib.util
 
     class StringLoader(importlib.abc.SourceLoader):
         def __init__(self, data):
@@ -103,9 +103,8 @@ def _load_module_from_memory(name, file):
         def get_filename(self, fullname):
             return f'/tmp/fake/{{fullname}}.py'
 
-    source = gzip.decompress(base64.b64decode(''.join([
-{data}
-    ])))
+    r_spc = re.compile(r'\s')
+    source = gzip.decompress(base64.b64decode(r_spc.sub('', {data})))
     spec = importlib.util.spec_from_loader(name, loader=StringLoader(source), origin='built-in')
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module

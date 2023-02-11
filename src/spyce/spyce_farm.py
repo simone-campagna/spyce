@@ -1,16 +1,73 @@
+import abc
 from pathlib import Path
 
-from .spyce import Spyce, SpyceFarm, default_spyce_type
+from .spyce import Spyce, default_spyce_type
 from . import api
 
 
 __all__ = [
+    'SpyceFarm',
     'ApiSpyceFarm',
     'SourceSpyceFarm',
     'FileSpyceFarm',
     'DirSpyceFarm',
     'UrlSpyceFarm',
 ]
+
+
+class SpyceFarm(abc.ABC):
+    def __init__(self, section=None, name=None, spyce_type=None):
+        self.section = section
+        self.name = name
+        self.spyce_type = spyce_type
+
+        self._check_section()
+        self._check_name()
+        self._check_spyce_type()
+
+    def spyce_class(self):
+        return Spyce.spyce_class(self.spyce_type)
+
+    def __call__(self):
+        return self.spyce_class()(
+            section=self.section,
+            name=self.name,
+            init=self.content(),
+        )
+
+    def _default_section(self):
+        return 'data'
+
+    def _default_name(self):
+        return None
+
+    def _default_spyce_type(self):
+        return None
+
+    def _check_section(self):
+        if self.section is None:
+            self.section = self._default_section()
+
+    def _check_name(self):
+        if self.name is None:
+            self.name = self._default_name()
+        if self.name is None:
+            raise RuntimeError(f'{type(self).__name__}: spyce name not set')
+
+    def _check_spyce_type(self):
+        if self.spyce_type is None:
+            self.spyce_type = self._default_spyce_type()
+        if self.spyce_type is None:
+            self.spyce_type = default_spyce_type(self.section, self.name)
+        if self.spyce_type not in {'text', 'bytes'}:
+            raise RuntimeError(f'{type(self).__name__}: unknown spyce type {self.spyce_type!r}')
+
+    @abc.abstractmethod
+    def content(self):
+        raise NotImplemented()
+
+    def __repr__(self):
+        return f'{type(self).__name__}({self.section!r}, {self.name!r}, {self.spyce_type!r})'
 
 
 class PathSpyceFarm(SpyceFarm):
