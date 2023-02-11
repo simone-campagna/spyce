@@ -102,7 +102,7 @@ def _filtered_keys(curry, key, filters):
 
     mp = {}
     for key, spyce in curry.items():
-        fq_key = spyce.fq_key()
+        fq_key = spyce.fq_key
         mp[fq_key] = key
     fq_keys = list(mp)
     for filt in filters:
@@ -130,8 +130,8 @@ def main_list(input_file, key, filters, show_lines=False, show_header=True):
     spyces = []
     keys = _filtered_keys(curry, key, filters)
     for key in keys:
-        spyce = curry[key]
-        num_chars = len(spyce.get_text(headers=True))
+        spyce = curry.get_spyce_item(key)
+        num_chars = len(spyce.get_text())
         table.append((spyce.section, spyce.name, spyce.spyce_type, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
         spyces.append(spyce)
     if table:
@@ -148,7 +148,7 @@ def main_list(input_file, key, filters, show_lines=False, show_header=True):
             print(fmt.format(*row))
             if show_lines and key is not None:
                 spyce = curry[key]
-                for ln, line in enumerate(spyce.get_lines(headers=True)):
+                for ln, line in enumerate(spyce.get_lines()):
                     line_no = ln + spyce.start + 1
                     print(f'  {line_no:<6d} {line.rstrip()}')
 
@@ -190,7 +190,8 @@ def main_add(input_file, output_file, spyce_farm_builder, section, name, spyce_t
             section=section,
             name=name,
             spyce_type=spyce_type)
-        curry[name] = spyce_farm
+        spyce = spyce_farm()
+        curry[spyce.key] = spyce
 
 
 def main_extract(input_file, output_file, key):
