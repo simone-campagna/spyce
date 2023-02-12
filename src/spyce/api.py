@@ -8,6 +8,7 @@ from . import spyce
 __all__ = [
 #    'get_spyce',
     'get_inline_api',
+    'get_simple_api',
     'get_tmpfile_api',
     'get_memory_api',
     'get_api',
@@ -18,7 +19,37 @@ __all__ = [
 
 def get_inline_api(name):
     source = spyce.get_spyce('source/spyce').get_content()
+    import ast
+    orig_module = ast.parse(source, mode='exec')
+    new_module = ast.parse(f'''\
+def _build_spyce_namespace(name, file):
+    def __build_bs(loc):  # better unparsing
+        class SpyceNamespace:
+            pass
+        
+        spyce_namespace = SpyceNamespace
+        for l_var, l_obj in loc.items():
+            setattr(spyce_namespace, l_var, l_obj)
+        return spyce_namespace
+
+    return __build_bs(locals())
+
+
+{name} = _build_spyce_namespace({name!r}, __file__)
+''')
+    # set function's body to spyce module's body:
+    build_ns_function = new_module.body[0]
+    build_ns_function.body = orig_module.body + build_ns_function.body
+    return '''\
+## spyce api implementation: inline
+''' + ast.unparse(new_module)
+
+
+def get_simple_api(name):
+    source = spyce.get_spyce('source/spyce').get_content()
     source += '''
+
+### create locals
 loc = locals()
 
 class SpyceNamespace:
@@ -36,7 +67,7 @@ return spyce_namespace
         indented_lines.append(indent + line)
     indented_source = '\n'.join(indented_lines)
     return f'''\
-## spyce api implementation: inline
+## spyce api implementation: simple
 def _build_spyce_namespace(name, file):
 {indented_source}
 
@@ -116,6 +147,7 @@ def _load_module_from_memory(name, file):
 '''
 
 API_IMPLEMENTATION = {
+    'simple': get_simple_api,
     'inline': get_inline_api,
     'tmpfile': get_tmpfile_api,
     'memory': get_memory_api,

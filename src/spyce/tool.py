@@ -291,11 +291,10 @@ spyce {get_version()} - add spyces to python source files
     c_group = add_parser.add_argument_group('spyce')
     c_mgrp = add_parser.add_mutually_exclusive_group(required=True)
     c_kwargs = {'dest': 'spyce_farm_builder'}
+    api_farm = SpyceFarmType(ApiSpyceFarm)
     c_mgrp.add_argument(
         '-a', '--api',
-        choices=[SpyceFarmType(ApiSpyceFarm)('inline'),
-                 SpyceFarmType(ApiSpyceFarm)('tmpfile'),
-                 SpyceFarmType(ApiSpyceFarm)('memory')],
+        choices=[api_farm(impl) for impl in api.get_api_implementations()],
         type=SpyceFarmType(ApiSpyceFarm),
         nargs='?', const=SpyceFarmType(ApiSpyceFarm)('memory'),
         **c_kwargs)
