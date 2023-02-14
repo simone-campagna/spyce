@@ -1,0 +1,11 @@
+wok:
+  files:
+    spyced-test-01:
+      source: test-01
+      spyces:
+        spyce:
+          category: api
+          implementation: tmpfile
+        xy:
+          category: url
+          url: https://ftp.gnu.org/gnu/wget/wget-1.9.1.tar.gz
