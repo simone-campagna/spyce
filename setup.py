@@ -8,12 +8,14 @@ setup(
     author="Simone Campagna",
     url="",
     install_requires=[
+        "pyyaml",
     ],
     package_dir={"": "src"},
     packages=find_packages(where='src'),
     entry_points={
         'console_scripts': [
-                'spyce=spyce.tool:main'
+                'spyce=spyce.tool:main_spyce',
+                'wok=spyce.tool:main_wok',
         ],
     },
     classifiers=[],

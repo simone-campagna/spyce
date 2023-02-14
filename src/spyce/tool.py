@@ -7,7 +7,6 @@ import sys
 
 from pathlib import Path
 
-from . import api
 from .log import (
     configure_logging,
     set_trace,
@@ -18,14 +17,16 @@ from .spyce import (
     SpycyFile,
     DEFAULT_BACKUP_FORMAT,
 )
-from .spyce_farm import (
-    ApiSpyceFarm,
-    FileSpyceFarm,
-    SourceSpyceFarm,
-    DirSpyceFarm,
-    UrlSpyceFarm,
+from .flavor import (
+    ApiFlavor,
+    FileFlavor,
+    SourceFlavor,
+    DirFlavor,
+    UrlFlavor,
 )
 from .version import get_version
+from .wok import load_wok, default_wok_filename, find_wok_path
+from . import api
 
 
 def add_input_argument(parser):
@@ -125,7 +126,7 @@ def add_key_filters_argument(parser, required=False):
     add_filters_argument(kf_mgrp, required=False)
 
 
-def main_list(input_file, key, filters, show_lines=False, show_header=True):
+def fn_list(input_file, key, filters, show_lines=False, show_header=True):
     spycy_file = SpycyFile(input_file)
     table = []
     spyces = []
@@ -155,14 +156,14 @@ def main_list(input_file, key, filters, show_lines=False, show_header=True):
 
 
 
-class SpyceFarmType:
-    class SpyceFarmBuilder:
-        def __init__(self, spyce_farm_class, value):
-            self.spyce_farm_class = spyce_farm_class
+class FlavorType:
+    class FlavorBuilder:
+        def __init__(self, flavor_class, value):
+            self.flavor_class = flavor_class
             self.value = value
 
         def __call__(self, section, name, spyce_type):
-            obj = self.spyce_farm_class(self.value, section=section, name=name, spyce_type=spyce_type)
+            obj = self.flavor_class(self.value, section=section, name=name, spyce_type=spyce_type)
             return obj
 
         def __str__(self):
@@ -170,40 +171,40 @@ class SpyceFarmType:
 
         def __repr__(self):
             return self.value
-            #return f'{type(self).__name__}({self.spyce_farm_class.__name__}, {self.value})'
+            #return f'{type(self).__name__}({self.flavor_class.__name__}, {self.value})'
 
     __registry__ = {}
 
-    def __init__(self, spyce_farm_class):
-        self.spyce_farm_class = spyce_farm_class
+    def __init__(self, flavor_class):
+        self.flavor_class = flavor_class
 
     def __call__(self, value):
-        key = (self.spyce_farm_class, value)
+        key = (self.flavor_class, value)
         if key not in self.__registry__:
-            self.__registry__[key] = self.__class__.SpyceFarmBuilder(*key)
+            self.__registry__[key] = self.__class__.FlavorBuilder(*key)
         return self.__registry__[key]
 
 
-def main_add(input_file, output_file, spyce_farm_builder, section, name, spyce_type, backup, backup_format, max_line_length):
+def fn_add(input_file, output_file, flavor_builder, section, name, spyce_type, backup, backup_format, max_line_length):
     if max_line_length is not None:
         set_max_line_length(max_line_length)
     spycy_file = SpycyFile(input_file)
     with spycy_file.refactor(output_file, backup=backup, backup_format=backup_format):
-        spyce_farm =spyce_farm_builder(
+        flavor =flavor_builder(
             section=section,
             name=name,
             spyce_type=spyce_type)
-        spyce = spyce_farm()
+        spyce = flavor()
         spycy_file[spyce.key] = spyce
 
 
-def main_extract(input_file, output_file, key):
+def fn_extract(input_file, output_file, key):
     spycy_file = SpycyFile(input_file)
     spyce = spycy_file[key]
     spyce.write_file(output_file)
 
 
-def main_del(input_file, output_file, key, filters, backup, backup_format):
+def fn_del(input_file, output_file, key, filters, backup, backup_format):
     spycy_file = SpycyFile(input_file)
     keys = _filtered_keys(spycy_file, key, filters)
     with spycy_file.refactor(output_file, backup=backup, backup_format=backup_format):
@@ -211,12 +212,16 @@ def main_del(input_file, output_file, key, filters, backup, backup_format):
             del spycy_file[key]
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description=f'''\
-spyce {get_version()} - add spyces to python source files
-''',
-    )
+def fn_wok(input_file):
+    if input_file is None:
+        input_file = find_wok_path()
+    if input_file is None:
+        sys.exit(f'wok file {default_wok_filename()} not found')
+    wok = load_wok(input_file)
+    wok()
+
+    
+def add_common_arguments(parser):
     parser.add_argument(
         '--trace',
         action='store_true',
@@ -235,13 +240,49 @@ spyce {get_version()} - add spyces to python source files
         const=0,
         help='suppress warnings',
         **v_kwargs)
+
+
+def build_parser(name, subparsers=None, **kwargs):
+    if subparsers:
+        parser = subparsers.add_parser(name, **kwargs)
+    else:
+        parser = argparse.ArgumentParser(name, **kwargs)
+        add_common_arguments(parser)
+    return parser
+
+
+def build_wok_parser(subparsers=None):
+    parser = build_parser(
+        name='wok',  subparsers=subparsers,
+        description=f'''\
+wok {get_version()} - add spyces to your python project
+'''
+    )
+    parser.set_defaults(
+        function=fn_wok,
+    )
+    parser.add_argument(
+        '-i', '--input-file',
+        type=Path,
+        default=None,
+        help='input wok file')
+    return parser
+
+
+def build_spyce_parser(subparsers=None):
+    parser = build_parser(
+        name='spyce',  subparsers=subparsers,
+        description=f'''\
+spyce {get_version()} - add spyces to python source files
+'''
+    )
     subparsers = parser.add_subparsers()
 
     ### list
     list_parser = subparsers.add_parser(
         'list',
         description='list spyces in python source file')
-    list_parser.set_defaults(function=main_list)
+    list_parser.set_defaults(function=fn_list)
     add_input_argument(list_parser)
     add_key_filters_argument(list_parser)
     list_parser.add_argument(
@@ -261,7 +302,7 @@ spyce {get_version()} - add spyces to python source files
     add_parser = subparsers.add_parser(
         'add',
         description='add or replace spyces in python source file')
-    add_parser.set_defaults(function=main_add)
+    add_parser.set_defaults(function=fn_add)
     add_input_argument(add_parser)
     add_output_argument(add_parser)
     add_backup_argument(add_parser)
@@ -290,36 +331,36 @@ spyce {get_version()} - add spyces to python source files
 
     c_group = add_parser.add_argument_group('spyce')
     c_mgrp = add_parser.add_mutually_exclusive_group(required=True)
-    c_kwargs = {'dest': 'spyce_farm_builder'}
-    api_farm = SpyceFarmType(ApiSpyceFarm)
+    c_kwargs = {'dest': 'flavor_builder'}
+    api_flavor = FlavorType(ApiFlavor)
     c_mgrp.add_argument(
         '-a', '--api',
-        choices=[api_farm(impl) for impl in api.get_api_implementations()],
-        type=SpyceFarmType(ApiSpyceFarm),
-        nargs='?', const=SpyceFarmType(ApiSpyceFarm)('memory'),
+        choices=[api_flavor(impl) for impl in api.get_api_implementations()],
+        type=FlavorType(ApiFlavor),
+        nargs='?', const=FlavorType(ApiFlavor)('memory'),
         **c_kwargs)
     c_mgrp.add_argument(
         '-p', '--py-source',
-        type=SpyceFarmType(SourceSpyceFarm),
+        type=FlavorType(SourceFlavor),
         **c_kwargs)
     c_mgrp.add_argument(
         '-f', '--file',
-        type=SpyceFarmType(FileSpyceFarm),
+        type=FlavorType(FileFlavor),
         **c_kwargs)
     c_mgrp.add_argument(
         '-d', '--dir',
-        type=SpyceFarmType(DirSpyceFarm),
+        type=FlavorType(DirFlavor),
         **c_kwargs)
     c_mgrp.add_argument(
         '-u', '--url',
-        type=SpyceFarmType(UrlSpyceFarm),
+        type=FlavorType(UrlFlavor),
         **c_kwargs)
 
     ### extract
     extract_parser = subparsers.add_parser(
         'extract',
         description='extract a spyce object from python source file')
-    extract_parser.set_defaults(function=main_extract)
+    extract_parser.set_defaults(function=fn_extract)
     add_input_argument(extract_parser)
     add_output_argument(extract_parser, optional=False)
     add_key_argument(extract_parser)
@@ -328,13 +369,18 @@ spyce {get_version()} - add spyces to python source files
     del_parser = subparsers.add_parser(
         'del',
         description='remove spyces from python source file')
-    del_parser.set_defaults(function=main_del)
+    del_parser.set_defaults(function=fn_del)
     add_input_argument(del_parser)
     add_output_argument(del_parser)
     add_backup_argument(del_parser)
     add_key_filters_argument(del_parser, required=True)
 
+    ### wok
+    wok_parser = build_wok_parser(subparsers)
+    return parser
 
+
+def runner(parser):
     ### parsing:
     ns = parser.parse_args()
     set_trace(ns.trace)
@@ -354,3 +400,13 @@ spyce {get_version()} - add spyces to python source files
     if not result:
         sys.exit(0)
     sys.exit(1)
+
+
+def main_spyce():
+    parser = build_spyce_parser()
+    runner(parser)
+
+
+def main_wok():
+    parser = build_wok_parser()
+    runner(parser)
