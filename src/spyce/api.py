@@ -28,8 +28,10 @@ def _build_spyce_namespace(name, file):
             pass
         
         spyce_namespace = SpyceNamespace
+        all_names = set(loc.get('__all__', loc))
         for l_var, l_obj in loc.items():
-            setattr(spyce_namespace, l_var, l_obj)
+            if l_var in all_names:
+                setattr(spyce_namespace, l_var, l_obj)
         return spyce_namespace
 
     return __build_bs(locals())

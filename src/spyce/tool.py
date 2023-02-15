@@ -76,11 +76,11 @@ def filter_pattern(value):
         spyce_type = '*'
     else:
         name, spyce_type = lst
-    fq_key = f'{section or "*"}/{name or "*"}:{spyce_type or "*"}'
+    fq_name = f'{section or "*"}/{name or "*"}:{spyce_type or "*"}'
     if negated:
-        return lambda lst: [i for i in lst if not fnmatch.fnmatch(i, fq_key)]
+        return lambda lst: [i for i in lst if not fnmatch.fnmatch(i, fq_name)]
     else:
-        return lambda lst: fnmatch.filter(lst, fq_key)
+        return lambda lst: fnmatch.filter(lst, fq_name)
 
 
 def add_filters_argument(parser, required=False):
@@ -104,12 +104,12 @@ def _filtered_keys(spycy_file, key, filters):
 
     mp = {}
     for key, spyce in spycy_file.items():
-        fq_key = spyce.fq_key
-        mp[fq_key] = key
-    fq_keys = list(mp)
+        fq_name = spyce.fq_name
+        mp[fq_name] = key
+    fq_names = list(mp)
     for filt in filters:
-        fq_keys = filt(fq_keys)
-    return [mp[fq_key] for fq_key in fq_keys]
+        fq_names = filt(fq_names)
+    return [mp[fq_name] for fq_name in fq_names]
 
 
 def add_key_argument(parser, required=False):
