@@ -241,11 +241,11 @@ def parse_wok_file_spyce(base_dir, filename, file, name, data):
         if key not in data:
             raise _build_err(filename, f'wok.files.{file}.spyces.{name}', f'missing key {key}')
         defaults[key] = data[key]
-    category = data.get('category', 'file')
+    flavor = data.get('flavor', 'file')
     try:
-        flavor_class = Flavor.flavor_class(category)
+        flavor_class = Flavor.flavor_class(flavor)
     except KeyError:
-        raise _build_err(filename, f'wok.files.{file}.spyces.{name}', f'unknown category {category!r}')
+        raise _build_err(filename, f'wok.files.{file}.spyces.{name}', f'unknown flavor {flavor!r}')
     try:
         g_args = flavor_class.parse_data(base_dir, filename, data)
     except FlavorParseError as err:
