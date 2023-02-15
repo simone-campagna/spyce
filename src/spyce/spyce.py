@@ -263,6 +263,18 @@ class SpycyFile(_spyce_MutableMapping):
         self._parse_lines()
         self.content_version = 0
 
+    def code_lines(self):
+        spyced_indices = set()
+        for jar in self.spyce_jars.values():
+            spyced_indices.update(range(jar.start, jar.end))
+        cur_index = 0
+        cur_lines = []
+        for index, line in enumerate(self.lines):
+            if index not in spyced_indices:
+                cur_lines.append((cur_index, line))
+                cur_index += 1
+        return cur_lines
+
     def _parse_lines(self):
         import re
         filename = self.filename
@@ -307,7 +319,7 @@ class SpycyFile(_spyce_MutableMapping):
 
     def _update_lines(self, l_start, l_diff):
         for spyce_jar in self.spyce_jars.values():
-            if spyce_jar.start > l_start:
+            if spyce_jar.start >= l_start:
                 spyce_jar.start += l_diff
                 spyce_jar.end += l_diff
         for section in self.section:

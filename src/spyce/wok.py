@@ -1,3 +1,7 @@
+import itertools
+import functools
+import sys
+
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -35,22 +39,45 @@ def find_wok_path(base_dir=None):
             return None
         base_dir = base_dir.parent
 
-    
+
 class WokError(SpyceError):
     pass
 
 
-class WokFile(Mapping):
-    def __init__(self, path, source, spyces):
-        self.path = Path(path)
-        if source is None:
-            source = self.path
-        self.source = Path(source)
+class WokMixin:
+    def __init__(self, base_dir, filename):
+        self.base_dir = Path(base_dir).absolute()
+        self.filename = Path(filename).absolute()
+
+    def abs_path(self, path):
+        path = Path(path)
+        if not path.is_absolute():
+            path = self.base_dir / path
+        return path
+
+    def rel_path(self, path):
+        path = Path(path).absolute()
+        if self.base_dir in path.parents:
+            return path.relative_to(self.base_dir)
+        return path
+
+
+class WokFile(WokMixin, Mapping):
+    def __init__(self, base_dir, filename, target_path, source_path, spyces):
+        super().__init__(base_dir, filename)
+        self.target_path = self.abs_path(target_path)
+        if source_path is None:
+            source_path = self.target_path
+        else:
+            source_path = self.abs_path(source_path)
+        self.source_path = source_path
+        self.target_rel_path = self.rel_path(self.target_path)
+        self.source_rel_path = self.rel_path(self.source_path)
         self.spyces = dict(spyces)
 
     @property
     def name(self):
-        return str(self.path)
+        return str(self.target_rel_path)
 
     def __getitem__(self, name):
         return self.spyces[name]
@@ -65,32 +92,83 @@ class WokFile(Mapping):
         return f'{type(self).__name__}({self.path!r}, {self.source!r}, {self.spyces!r})'
 
     def _use_source(self):
-        source = self.source
-        if not source.is_file():
-            raise WokError('file {source}: source file missing')
-        source_stat = source.stat()
-        target = self.path
-        if target.is_file():
-            if source_stat.st_ctime > target.stat().st_ctime:
-                return source
-            else:
-                return target
-        else:
-            return source
+        source_path = self.source_path
+        if not source_path.is_file():
+            raise WokError('file {self.source_rel_path}: source file missing')
+        source_stat = source_path.stat()
+        target_path = self.target_path
+        if target_path.is_file() and target_path.stat().st_ctime > source_stat.st_ctime:
+            return self.target_rel_path, target_path
+        return self.source_rel_path, source_path
 
-    def __call__(self):
-        source_file = self._use_source()
-        target_file = self.path
-        spycy_file = SpycyFile(source_file)
-        LOG.info(f'{source_file} -> {target_file}')
-        with spycy_file.refactor(target_file):
+    def fry(self, refresh_only=None):
+        source_rel_path, source_path = self._use_source()
+        target_rel_path, target_path = self.target_rel_path, self.target_path
+        spycy_file = SpycyFile(source_path)
+        LOG.info(f'{source_rel_path} -> {target_rel_path}')
+        with spycy_file.refactor(target_path):
+            keys = set()
             for flavor in self.spyces.values():
-                spyce = flavor()
-                spycy_file[spyce.key] = spyce
+                spyce_key = flavor.spyce_key()  ## TODO use name!
+                if sp_key not in spycy_file or (flavor.flavor() != refresh_only):
+                    spyce = flavor()
+                    assert sp_key == spyce.key
+                    spycy_file[sp_key] = spyce
+                keys.add(sp_key)
+            for key in set(spycy_file).difference(keys):
+                del spycy_file[key]
+
+    def status(self, stream=sys.stdout):
+        _print = functools.partial(print, file=stream)
+        source_rel_path, source_path = self.source_rel_path, self.source_path
+        target_rel_path, target_path = self.target_rel_path, self.target_path
+        if not target_path.is_file():
+            _print(f'  ! target {target_rel_path}: missing file')
+        if source_path == target_path:
+            _print(f'== {target_rel_path}')
+        else:
+            _print(f'== {target_rel_path} [{source_rel_path}]')
+            if not source_path.is_file():
+                _print(f'  ! source {source_rel_path}: missing file')
+            if target_path.is_file():
+                if source_path.is_file():
+                    target_stat = target_path.stat()
+                    source_stat = source_path.stat()
+                    if target_stat.st_ctime > source_stat.st_ctime:
+                        _print(f'  ! target is younger than source')
+                    target_spycy_file = SpycyFile(target_path)
+                    source_spycy_file = SpycyFile(source_path)
+                    target_code_lines = target_spycy_file.code_lines()
+                    source_code_lines = source_spycy_file.code_lines()
+                    if source_code_lines != target_code_lines:
+                        _print(f'  ! target and source does not match; first diff is:')
+                        for s_iline, t_iline in itertools.zip_longest(source_code_lines, target_code_lines, fillvalue=None):
+                            if s_iline is None:
+                                l_index, l_line = '-' , '(missing)'
+                                r_index, r_line = t_iline
+                            elif t_iline is None:
+                                l_index, l_line = s_iline
+                                r_index, r_line = '-' , '(missing)'
+                            elif s_iline[1] != t_iline[1]:
+                                l_index, l_line = s_iline
+                                r_index, r_line = t_iline
+                            else:
+                                continue
+                            l_line = l_line.rstrip('\n')
+                            r_line = r_line.rstrip('\n')
+                            _print(f'   @{l_index} : {r_index}')
+                            _print(f'   -{l_line}')
+                            _print(f'   +{r_line}')
+                            break
+                for flavor in self.spyces.values():
+                    spyce_key = flavor.spyce_key()
+                    if spyce_key not in target_spycy_file:
+                        _print(f'  ! target {target_rel_path}: spyce {spyce_key} is missing')
 
 
-class Wok(Mapping):
-    def __init__(self, wok_files):
+class Wok(WokMixin, Mapping):
+    def __init__(self, base_dir, filename, wok_files):
+        super().__init__(base_dir, filename)
         self.wok_files = dict(wok_files)
 
     def __getitem__(self, file):
@@ -105,9 +183,13 @@ class Wok(Mapping):
     def __repr__(self):
         return f'{type(self).__name__}({self.wok_files!r})'
 
-    def __call__(self):
+    def fry(self):
         for wok_file in self.wok_files.values():
-            wok_file()
+            wok_file.fry()
+
+    def status(self, stream=sys.stdout):
+        for wok_file in self.wok_files.values():
+            wok_file.status(stream)
 
 
 def _build_err(filename, section, message):
@@ -152,16 +234,12 @@ def parse_wok_file_spyces(base_dir, filename, file, data):
     return spyces
 
 
-def parse_wok_file(base_dir, filename, file, data):
+def parse_wok_file(base_dir, filename, target_path, data):
     if not isinstance(data, Mapping):
-        raise _build_err(filename, f'wok.files.{file}', 'not a mapping')
-    source = data.get('source', file)
-    if source:
-        source = Path(source)
-        if not source.is_absolute():
-            source = base_dir / source
-    spyces = parse_wok_file_spyces(base_dir, filename, file, data.get('spyces', []))
-    return WokFile(file, source=source, spyces=spyces)
+        raise _build_err(filename, f'wok.files.{target_path}', 'not a mapping')
+    source_path = data.get('source', target_path)
+    spyces = parse_wok_file_spyces(base_dir, filename, target_path, data.get('spyces', []))
+    return WokFile(base_dir, filename, target_path=target_path, source_path=source_path, spyces=spyces)
 
 
 def parse_wok_files(base_dir, filename, data):
@@ -180,14 +258,28 @@ def parse_wok_section(base_dir, filename, data):
     if not isinstance(data, Mapping):
         raise _build_err(filename, 'wok', 'not a mapping')
     files = parse_wok_files(base_dir, filename, data.get('files', {}))
-    return Wok(files)
+    return Wok(base_dir, filename, files)
 
 
-def load_wok(path):
-    path = Path(path).absolute()
+def load_wok(path=None):
+    if path is None:
+        path = find_wok_path()
+        if path is None:
+            raise WokError(f'cannot find a wok configuration file {DEFAULT_WOK_FILENAME!r}')
+    else:
+        path = Path(path).absolute()
+    if path.is_dir():
+        path = path / DEFAULT_WOK_FILENAME
+    if not path.exists():
+        raise WokError(f'wok file {path} does not exist')
+    if not path.is_file():
+        raise WokError(f'{path} is not a wok file')
     base_dir = path.parent
-    with open(path, 'r') as file:
-        data = yaml.safe_load(file)
+    try:
+        with open(path, 'r') as file:
+            data = yaml.safe_load(file)
+    except Exception as err:
+        raise WokError(f'wok file {path}: YAML parse error: {type(err).__name__}: {err}')
     return parse_wok(base_dir, path, data)
 
 
