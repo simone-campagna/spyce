@@ -1,6 +1,8 @@
 # spyce: start source/spyce_api:text
 import abc
 import datetime
+import fnmatch
+
 from collections.abc import MutableMapping
 from collections.abc import Sequence
 from contextlib import contextmanager
@@ -229,6 +231,22 @@ def get_file():
         return inspect.getfile(sys.modules[__name__])
 
 
+class Filter:
+    def __init__(self, pattern, reverse=False):
+        self.pattern = pattern
+        self.reverse = reverse
+
+    def __call__(self, items):
+        matched = fnmatch.filter(items, self.pattern)
+        if self.reverse:
+            return [item for item in lst in item not in matched]
+        else:
+            return matched
+
+    def __repr__(self):
+        return f'{type(self).__name__}({self.pattern!r}, reverse={self.reverse!r})'
+
+
 class SpycyFile(MutableMapping):
     __re_section__ = r'\# spyce:\s+section\s+(?P<section>source|data)\s*'
     __re_spyce__ = r'\# spyce:\s+(?P<action>start|end)\s+(?P<section>source|data)/(?P<name>[^\s\/\:]+)(?:\:(?P<type>\S+))?'
@@ -253,6 +271,41 @@ class SpycyFile(MutableMapping):
         self.section = {'source': None, 'data': None}
         self._parse_lines()
         self.content_version = 0
+
+    @classmethod
+    def build_filter(cls, pattern):
+        reverse = False
+        if pattern.startswith('~'):
+            pattern = pattern[1:]
+            reverse = True
+        lst = pattern.split('/', 1)
+        if len(lst) == 1:
+            section = '*'
+            rem = pattern
+        else:
+            section, rem = lst
+        lst = rem.split(':', 1)
+        if len(lst) == 1:
+            name = rem
+            spyce_type = '*'
+        else:
+            name, spyce_type = lst
+        fq_name = f'{section or "*"}/{name or "*"}:{spyce_type or "*"}'
+        return Filter(fq_name, reverse=reverse)
+
+    def filter(self, filters):
+        fq_dict = {spyce.fq_name: spyce.name for spyce in self.values()}
+        fq_names = list(fq_dict)
+        for flt in filters:
+            # print(flt, fq_names, end='... ')
+            if isinstance(flt, str):
+                flt = self.build_filter(flt)
+            # print(flt, end='... ')
+            fq_names = flt(fq_names)
+            # print('->', fq_names)
+            if not fq_names:
+                break
+        return [fq_dict[fq_name] for fq_name in fq_names]
 
     def code_lines(self):
         spyced_indices = set()
