@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from .color import colored
 from .flavor import Flavor, FlavorParseError
 from .log import LOG
 from .spyce import SpyceError, SpycyFile
@@ -107,41 +108,61 @@ class WokFile(WokMixin, Mapping):
         spycy_file = SpycyFile(source_path)
         LOG.info(f'{source_rel_path} -> {target_rel_path}')
         with spycy_file.refactor(target_path):
-            keys = set()
+            included_names = set()
             for flavor in self.spyces.values():
-                spyce_key = flavor.spyce_key()  ## TODO use name!
-                if sp_key not in spycy_file or (flavor.flavor() != refresh_only):
+                included_name = flavor.name
+                if included_name not in spycy_file or (flavor.flavor() != refresh_only):
                     spyce = flavor()
-                    assert sp_key == spyce.key
-                    spycy_file[sp_key] = spyce
-                keys.add(sp_key)
-            for key in set(spycy_file).difference(keys):
-                del spycy_file[key]
+                    spycy_file[included_name] = spyce
+                included_names.add(included_name)
+            for discarded_name in set(spycy_file).difference(included_names):
+                del spycy_file[discarded_name]
 
-    def status(self, stream=sys.stdout):
+    def status(self, stream=sys.stdout, info_level=0):
+        hdr = {
+            0: colored('I', 'blue'),
+            1: colored('W', 'yellow'),
+            2: colored('E', 'red'),
+        }
+        def _print(text):
+            print(text, file=stream)
+
+        def _log(level, text):
+            if level >= info_level:
+                print(f'{hdr[level]} {text}', file=stream)
+
+        def _bcg(text):
+            return colored(text, 'green', attrs=['bold'])
+
+        def _cg(text):
+            return colored(text, "green")
+
+        def _cy(text):
+            return colored(text, "yellow")
+
         _print = functools.partial(print, file=stream)
         source_rel_path, source_path = self.source_rel_path, self.source_path
         target_rel_path, target_path = self.target_rel_path, self.target_path
         if not target_path.is_file():
-            _print(f'  ! target {target_rel_path}: missing file')
+            _print(f'target {target_rel_path}: missing file')
         if source_path == target_path:
-            _print(f'== {target_rel_path}')
+            _print(f'{_cg("=")} {_bcg(target_rel_path)}')
         else:
-            _print(f'== {target_rel_path} [{source_rel_path}]')
+            _print(f'{_cg("=")} {_bcg(target_rel_path)} [source: {_cy(source_rel_path)}]')
             if not source_path.is_file():
-                _print(f'  ! source {source_rel_path}: missing file')
+                _log(1, f'source {source_rel_path}: missing file')
             if target_path.is_file():
                 if source_path.is_file():
                     target_stat = target_path.stat()
                     source_stat = source_path.stat()
                     if target_stat.st_ctime > source_stat.st_ctime:
-                        _print(f'  ! target is younger than source')
+                        _log(0, f'target is younger than source')
                     target_spycy_file = SpycyFile(target_path)
                     source_spycy_file = SpycyFile(source_path)
                     target_code_lines = target_spycy_file.code_lines()
                     source_code_lines = source_spycy_file.code_lines()
                     if source_code_lines != target_code_lines:
-                        _print(f'  ! target and source does not match; first diff is:')
+                        _log(1, f'target and source does not match; first diff is:')
                         for s_iline, t_iline in itertools.zip_longest(source_code_lines, target_code_lines, fillvalue=None):
                             if s_iline is None:
                                 l_index, l_line = '-' , '(missing)'
@@ -161,9 +182,12 @@ class WokFile(WokMixin, Mapping):
                             _print(f'   +{r_line}')
                             break
                 for flavor in self.spyces.values():
-                    spyce_key = flavor.spyce_key()
-                    if spyce_key not in target_spycy_file:
-                        _print(f'  ! target {target_rel_path}: spyce {spyce_key} is missing')
+                    name = flavor.name
+                    if name not in target_spycy_file:
+                        _log(2, f'target {target_rel_path}: spyce {name} is missing')
+                for name in target_spycy_file:
+                    if name not in self.spyces:
+                        _log(2, f'target {target_rel_path}: spyce {name} not expected')
 
 
 class Wok(WokMixin, Mapping):

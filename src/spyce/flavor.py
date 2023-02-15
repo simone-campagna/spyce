@@ -48,9 +48,6 @@ class Flavor(metaclass=FlavorMeta):
         self._check_name()
         self._check_spyce_type()
 
-    def spyce_key(self):
-        return f'{self.section}/{self.name}'
-
     @classmethod
     @abc.abstractmethod
     def flavor(self):

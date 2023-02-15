@@ -18,7 +18,7 @@ __all__ = [
 
 
 def get_inline_api(name):
-    source = spyce.get_spyce('source/spyce').get_content()
+    source = spyce.get_spyce('spyce_api').get_content()
     import ast
     orig_module = ast.parse(source, mode='exec')
     new_module = ast.parse(f'''\
@@ -46,7 +46,7 @@ def _build_spyce_namespace(name, file):
 
 
 def get_simple_api(name):
-    source = spyce.get_spyce('source/spyce').get_content()
+    source = spyce.get_spyce('spyce_api').get_content()
     source += '''
 
 ### create locals
@@ -93,7 +93,7 @@ def _compress_source(source):
 
 
 def get_tmpfile_api(name):
-    source = spyce.get_spyce('source/spyce').get_content()
+    source = spyce.get_spyce('spyce_api').get_content()
     uncompress_code = _compress_source(source)
     return f'''\
 ## spyce api implementation: tmpfile
@@ -119,7 +119,7 @@ def _load_module_from_tmpfile(name, file):
 
 
 def get_memory_api(name):
-    source = spyce.get_spyce('source/spyce').get_content()
+    source = spyce.get_spyce('spyce_api').get_content()
     uncompress_code = _compress_source(source)
     return f'''\
 ## spyce api implementation: memory

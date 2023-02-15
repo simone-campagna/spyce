@@ -195,7 +195,7 @@ def fn_spyce_add(input_file, output_file, flavor_builder, section, name, spyce_t
             name=name,
             spyce_type=spyce_type)
         spyce = flavor()
-        spycy_file[spyce.key] = spyce
+        spycy_file[spyce.name] = spyce
 
 
 def fn_spyce_extract(input_file, output_file, key):
