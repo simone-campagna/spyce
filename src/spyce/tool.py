@@ -170,9 +170,9 @@ def fn_wok_status(input_file):
     wok.status()
 
 
-def fn_wok_fry(input_file):
+def fn_wok_fry(input_file, filters):
     wok = load_wok(input_file)
-    wok.fry()
+    wok.fry(filters=filters)
 
     
 def add_common_arguments(parser):
@@ -236,6 +236,7 @@ wok {get_version()} - add spyces to your python project
         'fry', subparsers=subparsers,
         function=fn_wok_fry,
         description='apply the wok recipe')
+    add_filters_argument(fry_parser)
     return parser
 
 

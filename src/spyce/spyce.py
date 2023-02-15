@@ -148,7 +148,7 @@ class BytesSpyce(Spyce):
     def encode(cls, content):
         import base64
         lines = []
-        data = str(base64.b64encode(content), 'utf-8')
+        data = str(base64.b85encode(content), 'utf-8')
         data_prefix = cls.__data_prefix__
         dlen = max(get_max_line_length() - len(data_prefix), len(data_prefix) + 1)
         for index in range(0, len(data), dlen):
@@ -160,7 +160,7 @@ class BytesSpyce(Spyce):
         import base64
         data_prefix = cls.__data_prefix__
         data = ''.join(line[len(data_prefix):].strip() for line in lines if line.startswith(data_prefix))
-        return base64.b64decode(data)
+        return base64.b85decode(data)
 
     @classmethod
     def class_spyce_type(cls):

@@ -102,20 +102,25 @@ class WokFile(WokMixin, Mapping):
             return self.target_rel_path, target_path
         return self.source_rel_path, source_path
 
-    def fry(self, refresh_only=None):
+    def fry(self, filters=None):
         source_rel_path, source_path = self._use_source()
         target_rel_path, target_path = self.target_rel_path, self.target_path
         spycy_file = SpycyFile(source_path)
         LOG.info(f'{source_rel_path} -> {target_rel_path}')
         with spycy_file.refactor(target_path):
-            included_names = set()
+            if filters:
+                included_names = spycy_file.filter(filters)
+                excluded_names = set(spycy_file).difference(included_names)
+                # print(filters, included_names, excluded_names)
+            else:
+                excluded_names = set()
             for flavor in self.spyces.values():
-                included_name = flavor.name
-                if included_name not in spycy_file or (flavor.flavor() != refresh_only):
+                name = flavor.name
+                if name not in spycy_file or name not in excluded_names:
+                    LOG.info(f'file {spycy_file.filename}: setting spyce {name}')
                     spyce = flavor()
-                    spycy_file[included_name] = spyce
-                included_names.add(included_name)
-            for discarded_name in set(spycy_file).difference(included_names):
+                    spycy_file[name] = spyce
+            for discarded_name in set(spycy_file).difference(self.spyces):
                 del spycy_file[discarded_name]
 
     def status(self, stream=sys.stdout, info_level=0):
@@ -207,9 +212,9 @@ class Wok(WokMixin, Mapping):
     def __repr__(self):
         return f'{type(self).__name__}({self.wok_files!r})'
 
-    def fry(self):
+    def fry(self, filters=None):
         for wok_file in self.wok_files.values():
-            wok_file.fry()
+            wok_file.fry(filters=filters)
 
     def status(self, stream=sys.stdout):
         for wok_file in self.wok_files.values():

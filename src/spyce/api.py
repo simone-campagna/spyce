@@ -79,7 +79,7 @@ def _build_spyce_namespace(name, file):
 
 def _compress_source(source):
     b_source = bytes(source, 'utf-8')
-    data = str(base64.b64encode(gzip.compress(b_source)), 'utf-8')
+    data = str(base64.b85encode(gzip.compress(b_source)), 'utf-8')
     data_lines = ['"""']
     slen = spyce.get_max_line_length()
     for idx in range(0, len(data), slen):
@@ -90,7 +90,7 @@ def _compress_source(source):
     def _get_source():
         import base64, re, gzip
         data = bytes(re.sub(r'\s', '', {content}), 'utf-8')
-        return str(gzip.decompress(base64.b64decode(data)), 'utf-8')
+        return str(gzip.decompress(base64.b85decode(data)), 'utf-8')
 '''
 
 
