@@ -16,6 +16,7 @@ from .log import (
 )
 from .spyce import (
     set_max_line_length,
+    SpyceFilter,
     SpycyFile,
     DEFAULT_BACKUP_FORMAT,
 )
@@ -65,12 +66,15 @@ def add_filters_argument(parser, required=False):
     parser.add_argument(
         '-f', '--filter',
         dest='filters',
-        metavar='[~][section/][name][:type]',
-        type=SpycyFile.build_filter,
+        metavar='FLT',
+        type=SpyceFilter.build,
         action='append',
         default=[],
         required=required,
-        help="add pattern to filter spyces, e.g. 'spyce_api', '~data/x.tgz', ':bytes'")
+        help="""\
+add spyce filter spyces; the format can contain 'name', '^section', ':type' and '%%flavor',
+where all components are optional. The name, section, type and flavor values are patterns,
+eventually preceded by ~ to reverse selection. For instance: '%%api', '^data wg*'""")
 
 
 def add_name_argument(parser, required=False):
@@ -88,12 +92,13 @@ def fn_spyce_list(input_file, filters, show_lines=False, show_conf=False, show_h
     for name in names:
         spyce = spycy_file.get_spyce_jar(name)
         num_chars = len(spyce.get_text())
-        table.append((spyce.section, spyce.name, spyce.spyce_type, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
+        flavor = spyce.flavor or ''
+        table.append((spyce.section, spyce.name, spyce.spyce_type, flavor, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
         spyces.append(spyce)
     if table:
         if show_header:
             names.insert(0, None)
-            table.insert(0, ['section', 'name', 'type', 'lines', 'size'])
+            table.insert(0, ['section', 'name', 'type', 'flavor', 'lines', 'size'])
         mlen = [max(len(row[c]) for row in table) for c in range(len(table[0]))]
         if show_header:
             names.insert(1, None)

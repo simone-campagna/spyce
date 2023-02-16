@@ -15,11 +15,12 @@ from collections.abc import Mapping, MutableMapping
 from collections.abc import Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from operator import attrgetter
 
 
 __all__ = [
     'get_spyce', 'get_max_line_length', 'set_max_line_length',
-    'Spyce', 'TextSpyce', 'BytesSpyce',
+    'Pattern', 'SpyceFilter', 'Spyce', 'TextSpyce', 'BytesSpyce',
     'SpyceJar', 'SpycyFile',
 ]
 
@@ -74,6 +75,10 @@ class Spyce(metaclass=SpyceMeta):
         self.section = section
         self.name = name
         self.conf = conf or {}
+
+    @property
+    def flavor(self):
+        return self.conf.get('flavor', None)
 
     @classmethod
     def spyce_class(cls, spyce_type, /, default=UNDEF):
@@ -205,6 +210,10 @@ class SpyceJar:
         self.conf = conf or {}
         self.num_params = 0
 
+    @property
+    def flavor(self):
+        return self.conf.get('flavor', None)
+
     def merge_conf(self, line_index, key, value):
         if line_index != (self.start + self.num_params + 1):
             raise SpyceError(f"{self.spycy_file.filename}@{line_index + 1}: unexpected spyce conf")
@@ -242,20 +251,64 @@ def get_file():
         return inspect.getfile(sys.modules[__name__])
 
 
-class Filter:
+class Pattern:
     def __init__(self, pattern, reverse=False):
         self.pattern = pattern
         self.reverse = reverse
 
-    def __call__(self, items):
-        matched = fnmatch.filter(items, self.pattern)
-        if self.reverse:
-            return [item for item in lst in item not in matched]
+    @classmethod
+    def build(cls, value):
+        if value.startswith('~'):
+            reverse, pattern = True, value[1:]
         else:
-            return matched
+            reverse, pattern = False, value
+        return cls(pattern, reverse)
+
+    def __call__(self, value):
+        return self.reverse != bool(fnmatch.fnmatch(value, self.pattern))
+
+    def __str__(self):
+        if self.reverse:
+            return f'~{self.pattern}'
+        return self.pattern
 
     def __repr__(self):
-        return f'{type(self).__name__}({self.pattern!r}, reverse={self.reverse!r})'
+        return f'{type(self).__name__}({self.pattern!r}, {self.reverse!r})'
+
+
+class SpyceFilter:
+    __regex__ = re.compile(r'(?P<op>[\^\:\%])?(?P<pattern>[^\^\:\%]+)\s*')
+    __key_dict__ = {'': 'name', ':': 'spyce_type', '^': 'section', '%': 'flavor'}
+
+    def __init__(self, section=None, name=None, spyce_type=None, flavor=None):
+        self.patterns = []
+        if section:
+            self.patterns.append(('section', Pattern.build(section), attrgetter('section')))
+        if name:
+            self.patterns.append(('name', Pattern.build(name), attrgetter('name')))
+        if spyce_type:
+            self.patterns.append(('spyce_type', Pattern.build(spyce_type), attrgetter('spyce_type')))
+        if flavor:
+            self.patterns.append(('flavor', Pattern.build(flavor), attrgetter('flavor')))
+
+    @classmethod
+    def build(cls, value):
+        # name :type ^section %flavor
+        kwargs = {}
+        for op, pattern in cls.__regex__.findall(value):
+            kwargs[cls.__key_dict__[op]] = pattern
+        return cls(**kwargs)
+
+    def __call__(self, spyce):
+        return all(pattern(getter(spyce)) for _,  pattern, getter in self.patterns)
+
+    def __repr__(self):
+        args = ', '.join(f'{key}={pattern!r}' for key, pattern, _ in self.patterns)
+        return f'{type(self).__name__}({args})'
+
+    def __str__(self):
+        key_rev = {value: key for key, value in self.__key_dict__.items()}
+        return ' '.join(key_rev[key] + str(pattern) for key, pattern, _ in self.patterns)
 
 
 class SpycyFile(MutableMapping):
@@ -284,40 +337,18 @@ class SpycyFile(MutableMapping):
         self._parse_lines()
         self.content_version = 0
 
-    @classmethod
-    def build_filter(cls, pattern):
-        reverse = False
-        if pattern.startswith('~'):
-            pattern = pattern[1:]
-            reverse = True
-        lst = pattern.split('/', 1)
-        if len(lst) == 1:
-            section = '*'
-            rem = pattern
-        else:
-            section, rem = lst
-        lst = rem.split(':', 1)
-        if len(lst) == 1:
-            name = rem
-            spyce_type = '*'
-        else:
-            name, spyce_type = lst
-        fq_name = f'{section or "*"}/{name or "*"}:{spyce_type or "*"}'
-        return Filter(fq_name, reverse=reverse)
-
-    def filter(self, filters):
-        fq_dict = {spyce.fq_name: spyce.name for spyce in self.values()}
-        fq_names = list(fq_dict)
-        for flt in filters:
-            # print(flt, fq_names, end='... ')
-            if isinstance(flt, str):
-                flt = self.build_filter(flt)
-            # print(flt, end='... ')
-            fq_names = flt(fq_names)
-            # print('->', fq_names)
-            if not fq_names:
+    def filter(self, spyce_filters):
+        spyces = list(self.values())
+        for spyce_filter in spyce_filters:
+            new_spyces = []
+            for spyce in spyces:
+                if spyce_filter(spyce):
+                    new_spyces.append(spyce)
+            spyces = new_spyces
+            if not spyces:
                 break
-        return [fq_dict[fq_name] for fq_name in fq_names]
+        selected_names = {spyce.name for spyce in spyces}
+        return [name for name in self if name in selected_names]
 
     def code_lines(self):
         spyced_indices = set()
