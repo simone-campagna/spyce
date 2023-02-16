@@ -1,14 +1,16 @@
-# spyce: start source/spyce:text
-import abc as _spyce_abc
-import datetime as _spyce_datetime
-from collections.abc import MutableMapping as _spyce_MutableMapping
-from collections.abc import Sequence as _spyce_Sequence
-from contextlib import contextmanager as _spyce_contextmanager
-from pathlib import Path as _spyce_Path
+# spyce: start source/spyce_api:text
+import abc
+import datetime
+import fnmatch
+
+from collections.abc import MutableMapping
+from collections.abc import Sequence
+from contextlib import contextmanager
+from pathlib import Path
 
 
 __all__ = [
-    'get_max_line_length', 'set_max_line_length',
+    'get_spyce', 'get_max_line_length', 'set_max_line_length',
     'Spyce', 'TextSpyce', 'BytesSpyce',
     'SpyceJar', 'SpycyFile',
 ]
@@ -27,7 +29,7 @@ def set_max_line_length(value):
     MAX_LINE_LENGTH = int(value)
 
 
-class Timestamp(_spyce_datetime.datetime):
+class Timestamp(datetime.datetime):
     def __str__(self):
         return self.strftime('%Y%m%d-%H%M%S')
 
@@ -40,7 +42,7 @@ class SpyceError(RuntimeError):
     pass
 
 
-class SpyceMeta(_spyce_abc.ABCMeta):
+class SpyceMeta(abc.ABCMeta):
     def __new__(mcls, class_name, class_bases, class_dict):
         cls = super().__new__(mcls, class_name, class_bases, class_dict)
         import inspect
@@ -73,16 +75,12 @@ class Spyce(metaclass=SpyceMeta):
             return cls.__registry__.get(spyce_type, default)
 
     @classmethod
-    @_spyce_abc.abstractmethod
+    @abc.abstractmethod
     def class_spyce_type(cls):
         raise NotImplementedError()
 
     @property
-    def key(self):
-        return f'{self.section}/{self.name}'
-
-    @property
-    def fq_key(self):
+    def fq_name(self):
         return f'{self.section}/{self.name}:{self.spyce_type}'
 
     @property
@@ -90,12 +88,12 @@ class Spyce(metaclass=SpyceMeta):
         return self.class_spyce_type()
 
     @classmethod
-    @_spyce_abc.abstractmethod
+    @abc.abstractmethod
     def encode(cls, content):
         raise NotImplementedError()
 
     @classmethod
-    @_spyce_abc.abstractmethod
+    @abc.abstractmethod
     def decode(cls, lines):
         raise NotImplementedError()
 
@@ -112,7 +110,7 @@ class Spyce(metaclass=SpyceMeta):
         return 'w'
 
     def _build_path(self, path):
-        path = _spyce_Path(path)
+        path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -123,7 +121,7 @@ class Spyce(metaclass=SpyceMeta):
             file.write(content)
 
     def __str__(self):
-        return self.fq_key
+        return self.fq_name
 
     def __repr__(self):
         return f'{type(self).__name__}({self.spycy_file!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r})'
@@ -150,7 +148,7 @@ class BytesSpyce(Spyce):
     def encode(cls, content):
         import base64
         lines = []
-        data = str(base64.b64encode(content), 'utf-8')
+        data = str(base64.b85encode(content), 'utf-8')
         data_prefix = cls.__data_prefix__
         dlen = max(get_max_line_length() - len(data_prefix), len(data_prefix) + 1)
         for index in range(0, len(data), dlen):
@@ -162,7 +160,7 @@ class BytesSpyce(Spyce):
         import base64
         data_prefix = cls.__data_prefix__
         data = ''.join(line[len(data_prefix):].strip() for line in lines if line.startswith(data_prefix))
-        return base64.b64decode(data)
+        return base64.b85decode(data)
 
     @classmethod
     def class_spyce_type(cls):
@@ -187,8 +185,7 @@ class SpyceJar:
         if spyce_type is None:
             spyce_type = default_spyce_type(section, name)
         self.spyce_type = spyce_type
-        self.key = self.spyce_key(section, name)
-        self.fq_key = self.spyce_fq_key(section, name, spyce_type)
+        self.fq_name = self.spyce_fq_name(section, name, spyce_type)
         self.start = start
         self.end = end
         spyce_class = Spyce.spyce_class(spyce_type, None)
@@ -204,11 +201,7 @@ class SpyceJar:
         return self._spyce
 
     @staticmethod
-    def spyce_key(section, name):
-        return f'{section}/{name}'
-
-    @staticmethod
-    def spyce_fq_key(section, name, spyce_type):
+    def spyce_fq_name(section, name, spyce_type):
         return f'{section}/{name}:{spyce_type}'
 
     def get_lines(self, headers=False):
@@ -222,7 +215,7 @@ class SpyceJar:
         return '\n'.join(self.get_lines(headers=headers))
 
     def __str__(self):
-        return self.key
+        return self.name
 
     def __repr__(self):
         return f'{type(self).__name__}({self.spycy_file!r}, {self.section!r}, {self.name!r}, {self.start!r}, {self.end!r})'
@@ -238,7 +231,23 @@ def get_file():
         return inspect.getfile(sys.modules[__name__])
 
 
-class SpycyFile(_spyce_MutableMapping):
+class Filter:
+    def __init__(self, pattern, reverse=False):
+        self.pattern = pattern
+        self.reverse = reverse
+
+    def __call__(self, items):
+        matched = fnmatch.filter(items, self.pattern)
+        if self.reverse:
+            return [item for item in lst in item not in matched]
+        else:
+            return matched
+
+    def __repr__(self):
+        return f'{type(self).__name__}({self.pattern!r}, reverse={self.reverse!r})'
+
+
+class SpycyFile(MutableMapping):
     __re_section__ = r'\# spyce:\s+section\s+(?P<section>source|data)\s*'
     __re_spyce__ = r'\# spyce:\s+(?P<action>start|end)\s+(?P<section>source|data)/(?P<name>[^\s\/\:]+)(?:\:(?P<type>\S+))?'
     __sections__ = {'source', 'data'}
@@ -247,8 +256,8 @@ class SpycyFile(_spyce_MutableMapping):
         if file is None:
             file = get_file()
         if lines is None:
-            if isinstance(file, (str, _spyce_Path)):
-                path = _spyce_Path(file)
+            if isinstance(file, (str, Path)):
+                path = Path(file)
                 with open(file, 'r') as fh:
                     lines = fh.readlines()
             else:
@@ -262,6 +271,41 @@ class SpycyFile(_spyce_MutableMapping):
         self.section = {'source': None, 'data': None}
         self._parse_lines()
         self.content_version = 0
+
+    @classmethod
+    def build_filter(cls, pattern):
+        reverse = False
+        if pattern.startswith('~'):
+            pattern = pattern[1:]
+            reverse = True
+        lst = pattern.split('/', 1)
+        if len(lst) == 1:
+            section = '*'
+            rem = pattern
+        else:
+            section, rem = lst
+        lst = rem.split(':', 1)
+        if len(lst) == 1:
+            name = rem
+            spyce_type = '*'
+        else:
+            name, spyce_type = lst
+        fq_name = f'{section or "*"}/{name or "*"}:{spyce_type or "*"}'
+        return Filter(fq_name, reverse=reverse)
+
+    def filter(self, filters):
+        fq_dict = {spyce.fq_name: spyce.name for spyce in self.values()}
+        fq_names = list(fq_dict)
+        for flt in filters:
+            # print(flt, fq_names, end='... ')
+            if isinstance(flt, str):
+                flt = self.build_filter(flt)
+            # print(flt, end='... ')
+            fq_names = flt(fq_names)
+            # print('->', fq_names)
+            if not fq_names:
+                break
+        return [fq_dict[fq_name] for fq_name in fq_names]
 
     def code_lines(self):
         spyced_indices = set()
@@ -288,7 +332,7 @@ class SpycyFile(_spyce_MutableMapping):
             nonlocal spyce_jars, spyce_jar
             if spyce_jar:
                 spyce_jar.end = line_index + 1
-                spyce_jars[spyce_jar.key] = spyce_jar
+                spyce_jars[spyce_jar.name] = spyce_jar
                 spyce_jar = None
 
         for cur_index, line in enumerate(lines):
@@ -311,7 +355,7 @@ class SpycyFile(_spyce_MutableMapping):
                         # empty spyce
                         _store_spyce_jar(spyce_jar.start)
                     spyce_jar = SpyceJar(self, section=cur_section, name=cur_name, spyce_type=cur_type, start=cur_index, end=None)
-                    if spyce_jar.key in self.spyce_jars:
+                    if spyce_jar.name in self.spyce_jars:
                         raise SpyceError(f"{filename}@{spyce_jar.start + 1}: duplicated spyce {spyce_jar}")
                     continue
         if spyce_jar:
@@ -326,13 +370,13 @@ class SpycyFile(_spyce_MutableMapping):
             if self.section[section] is not None and self.section[section] > l_start:
                 self.section[section] += l_diff
 
-    def __delitem__(self, key):
-        spyce_jar = self.spyce_jars.pop(key)
+    def __delitem__(self, name):
+        spyce_jar = self.spyce_jars.pop(name)
         del self.lines[spyce_jar.start:spyce_jar.end]
         self._update_lines(spyce_jar.start, -(spyce_jar.end - spyce_jar.start))
         self.content_version += 1
 
-    def __setitem__(self, key, spyce):
+    def __setitem__(self, name, spyce):
         if not isinstance(spyce, Spyce):
             raise TypeError(spyce)
         section = spyce.section
@@ -341,10 +385,10 @@ class SpycyFile(_spyce_MutableMapping):
         content = spyce.get_content()
 
         self.content_version += 1
-        deleted_spyce_jar = self.spyce_jars.get(key, None)
+        deleted_spyce_jar = self.spyce_jars.get(name, None)
         if deleted_spyce_jar:
             # replace existing block
-            del self[key]
+            del self[name]
             start = deleted_spyce_jar.start
         else:
             spc_ends = [spc.end for spc in self.spyce_jars.values() if spc.section == section]
@@ -365,16 +409,17 @@ class SpycyFile(_spyce_MutableMapping):
                         start = l_index
                     else:
                         start = len(self.lines)
-        spyce_lines = [f'# spyce: start {key}:{spyce_type}\n']
+        fq_name = spyce.fq_name
+        spyce_lines = [f'# spyce: start {fq_name}\n']
         spyce_lines.extend(spyce.encode(content))
-        spyce_lines.append(f'# spyce: end {key}:{spyce_type}\n')
+        spyce_lines.append(f'# spyce: end {fq_name}\n')
         self.lines[start:start] = spyce_lines
         l_diff = len(spyce_lines)
         self._update_lines(start, l_diff)
         spyce_jar = SpyceJar(self, section=section, name=name, spyce_type=spyce_type, start=start, end=start + len(spyce_lines))
-        self.spyce_jars[key] = spyce_jar
+        self.spyce_jars[spyce_jar.name] = spyce_jar
 
-    @_spyce_contextmanager
+    @contextmanager
     def refactor(self, output_path=None, backup=False, backup_format=DEFAULT_BACKUP_FORMAT):
         import shutil
         if self.path is None:
@@ -387,13 +432,13 @@ class SpycyFile(_spyce_MutableMapping):
             else:
                 output_path = None
         else:
-            output_path = _spyce_Path(output_path)
+            output_path = Path(output_path)
         if output_path is self.path or not self.path.is_file():
             backup = False
             if backup and self.path.is_file():
                 if backup_format is None:
                     backup_format = DEFAULT_BACKUP_FORMAT
-                backup_path = _spyce_Path(str(backup_format).format(
+                backup_path = Path(str(backup_format).format(
                     path=self.path,
                     timestamp=Timestamp.now(),
                 ))
@@ -412,22 +457,20 @@ class SpycyFile(_spyce_MutableMapping):
     def __iter__(self):
         yield from self.spyce_jars
 
-    def __getitem__(self, key):
-        return self.spyce_jars[key].spyce
+    def __getitem__(self, name):
+        return self.spyce_jars[name].spyce
 
-    def get_spyce_jar(self, key):
-        return self.spyce_jars[key]
+    def get_spyce_jar(self, name):
+        return self.spyce_jars[name]
 
     def __repr__(self):
         return f'{type(self).__name__}({self.filename!r})'
 
 
-def get_spyce(key, file=None):
-    if '/' not in key:
-        key = 'data/' + key
+def get_spyce(name, file=None):
     spycy_file = SpycyFile(file)
-    if key not in spycy_file:
-        raise SpyceError(f'spyce {key} not found')
-    return spycy_file[key]
+    if name not in spycy_file:
+        raise SpyceError(f'spyce {name} not found')
+    return spycy_file[name]
 
-# spyce: end source/spyce:text
+# spyce: end source/spyce_api:text

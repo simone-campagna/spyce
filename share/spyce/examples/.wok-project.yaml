@@ -4,8 +4,8 @@ wok:
       source: test-01
       spyces:
         spyce:
-          category: api
+          flavor: api
           implementation: tmpfile
-        xy:
-          category: url
+        wget-1.9.1.tar.gz:
+          flavor: url
           url: https://ftp.gnu.org/gnu/wget/wget-1.9.1.tar.gz

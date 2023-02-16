@@ -18,7 +18,7 @@ __all__ = [
 
 
 def get_inline_api(name):
-    source = spyce.get_spyce('source/spyce').get_content()
+    source = spyce.get_spyce('spyce_api').get_content()
     import ast
     orig_module = ast.parse(source, mode='exec')
     new_module = ast.parse(f'''\
@@ -28,8 +28,10 @@ def _build_spyce_namespace(name, file):
             pass
         
         spyce_namespace = SpyceNamespace
+        all_names = set(loc.get('__all__', loc))
         for l_var, l_obj in loc.items():
-            setattr(spyce_namespace, l_var, l_obj)
+            if l_var in all_names:
+                setattr(spyce_namespace, l_var, l_obj)
         return spyce_namespace
 
     return __build_bs(locals())
@@ -46,7 +48,7 @@ def _build_spyce_namespace(name, file):
 
 
 def get_simple_api(name):
-    source = spyce.get_spyce('source/spyce').get_content()
+    source = spyce.get_spyce('spyce_api').get_content()
     source += '''
 
 ### create locals
@@ -77,7 +79,7 @@ def _build_spyce_namespace(name, file):
 
 def _compress_source(source):
     b_source = bytes(source, 'utf-8')
-    data = str(base64.b64encode(gzip.compress(b_source)), 'utf-8')
+    data = str(base64.b85encode(gzip.compress(b_source)), 'utf-8')
     data_lines = ['"""']
     slen = spyce.get_max_line_length()
     for idx in range(0, len(data), slen):
@@ -88,12 +90,12 @@ def _compress_source(source):
     def _get_source():
         import base64, re, gzip
         data = bytes(re.sub(r'\s', '', {content}), 'utf-8')
-        return str(gzip.decompress(base64.b64decode(data)), 'utf-8')
+        return str(gzip.decompress(base64.b85decode(data)), 'utf-8')
 '''
 
 
 def get_tmpfile_api(name):
-    source = spyce.get_spyce('source/spyce').get_content()
+    source = spyce.get_spyce('spyce_api').get_content()
     uncompress_code = _compress_source(source)
     return f'''\
 ## spyce api implementation: tmpfile
@@ -119,7 +121,7 @@ def _load_module_from_tmpfile(name, file):
 
 
 def get_memory_api(name):
-    source = spyce.get_spyce('source/spyce').get_content()
+    source = spyce.get_spyce('spyce_api').get_content()
     uncompress_code = _compress_source(source)
     return f'''\
 ## spyce api implementation: memory

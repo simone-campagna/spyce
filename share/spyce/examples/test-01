@@ -6,15 +6,17 @@ from pathlib import Path
 # spyce: section source
 
 def main():
-    bsp = spyce.get_spyce('xy')
+    bsp = spyce.get_spyce('wget-1.9.1.tar.gz')
     with tempfile.TemporaryDirectory() as tmpd:
-        out_path = Path(tmpd) / (Path(__file__).name + '.xy.tar.gz')
+        out_path = Path(tmpd) / bsp.name
         print(f'saving file {out_path}')
         bsp.write_file(out_path)
-        out_dir = Path(tmpd) / (Path(__file__).name + '-untar')
+        out_dir = Path(tmpd) / (Path(__file__).name + '-wget')
         print(f'extracting dir {out_dir}')
         bsp.untar(out_dir)
-    print('Hello, world')
+        for f in out_dir.glob('**/*'):
+            print(' +', f)
+    print('all done.')
 
 if __name__ == '__main__':
     main()

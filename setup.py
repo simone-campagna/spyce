@@ -9,6 +9,7 @@ setup(
     url="",
     install_requires=[
         "pyyaml",
+        "termcolor",
     ],
     package_dir={"": "src"},
     packages=find_packages(where='src'),

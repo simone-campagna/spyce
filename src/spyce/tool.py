@@ -59,97 +59,49 @@ def add_backup_argument(parser):
         help=f'set backup format (default: {DEFAULT_BACKUP_FORMAT!r}')
 
 
-def filter_pattern(value):
-    negated = False
-    if value.startswith('~'):
-        value = value[1:]
-        negated = True
-    lst = value.split('/', 1)
-    if len(lst) == 1:
-        section = '*'
-        rem = value
-    else:
-        section, rem = lst
-    lst = rem.split(':', 1)
-    if len(lst) == 1:
-        name = rem
-        spyce_type = '*'
-    else:
-        name, spyce_type = lst
-    fq_key = f'{section or "*"}/{name or "*"}:{spyce_type or "*"}'
-    if negated:
-        return lambda lst: [i for i in lst if not fnmatch.fnmatch(i, fq_key)]
-    else:
-        return lambda lst: fnmatch.filter(lst, fq_key)
-
-
 def add_filters_argument(parser, required=False):
     parser.add_argument(
         '-f', '--filter',
         dest='filters',
         metavar='[~][section/][name][:type]',
-        type=filter_pattern,
+        type=SpycyFile.build_filter,
         action='append',
         default=[],
         required=required,
-        help="add pattern to filter spyces, e.g. 'source/api', '~data/x.tgz', ':bytes'")
+        help="add pattern to filter spyces, e.g. 'spyce_api', '~data/x.tgz', ':bytes'")
 
 
-def _filtered_keys(spycy_file, key, filters):
-    if key is not None:
-        if key in spycy_file:
-            return [key]
-        else:
-            raise KeyError(key)
-
-    mp = {}
-    for key, spyce in spycy_file.items():
-        fq_key = spyce.fq_key
-        mp[fq_key] = key
-    fq_keys = list(mp)
-    for filt in filters:
-        fq_keys = filt(fq_keys)
-    return [mp[fq_key] for fq_key in fq_keys]
-
-
-def add_key_argument(parser, required=False):
+def add_name_argument(parser, required=False):
     parser.add_argument(
-        '-k', '--key',
+        '-n', '--name',
         required=required,
-        help='spyce key (section/name)')
+        help='spyce name')
 
 
-def add_key_filters_argument(parser, required=False):
-    kf_group = parser.add_argument_group('key/filter')
-    kf_mgrp = kf_group.add_mutually_exclusive_group(required=required)
-    add_key_argument(kf_mgrp, required=False)
-    add_filters_argument(kf_mgrp, required=False)
-
-
-def fn_spyce_list(input_file, key, filters, show_lines=False, show_header=True):
+def fn_spyce_list(input_file, filters, show_lines=False, show_header=True):
     spycy_file = SpycyFile(input_file)
     table = []
     spyces = []
-    keys = _filtered_keys(spycy_file, key, filters)
-    for key in keys:
-        spyce = spycy_file.get_spyce_jar(key)
+    names = spycy_file.filter(filters)
+    for name in names:
+        spyce = spycy_file.get_spyce_jar(name)
         num_chars = len(spyce.get_text())
         table.append((spyce.section, spyce.name, spyce.spyce_type, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
         spyces.append(spyce)
     if table:
         if show_header:
-            keys.insert(0, None)
+            names.insert(0, None)
             table.insert(0, ['section', 'name', 'type', 'lines', 'size'])
         mlen = [max(len(row[c]) for row in table) for c in range(len(table[0]))]
         if show_header:
-            keys.insert(1, None)
+            names.insert(1, None)
             table.insert(1, ['-' * ml for ml in mlen])
 
         fmt = ' '.join(f'{{:{ml}s}}' for ml in mlen)
-        for key, row in zip(keys, table):
+        for name, row in zip(names, table):
             print(fmt.format(*row))
-            if show_lines and key is not None:
-                spyce = spycy_file[key]
+            if show_lines and name is not None:
+                spyce = spycy_file[name]
                 for ln, line in enumerate(spyce.get_lines()):
                     line_no = ln + spyce.start + 1
                     print(f'  {line_no:<6d} {line.rstrip()}')
@@ -195,21 +147,21 @@ def fn_spyce_add(input_file, output_file, flavor_builder, section, name, spyce_t
             name=name,
             spyce_type=spyce_type)
         spyce = flavor()
-        spycy_file[spyce.key] = spyce
+        spycy_file[spyce.name] = spyce
 
 
-def fn_spyce_extract(input_file, output_file, key):
+def fn_spyce_extract(input_file, output_file, name):
     spycy_file = SpycyFile(input_file)
-    spyce = spycy_file[key]
+    spyce = spycy_file[name]
     spyce.write_file(output_file)
 
 
-def fn_spyce_del(input_file, output_file, key, filters, backup, backup_format):
+def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
     spycy_file = SpycyFile(input_file)
-    keys = _filtered_keys(spycy_file, key, filters)
+    names = spycy_file.filter(filters)
     with spycy_file.refactor(output_file, backup=backup, backup_format=backup_format):
-        for key in keys:
-            del spycy_file[key]
+        for name in names:
+            del spycy_file[name]
 
 
 
@@ -218,9 +170,9 @@ def fn_wok_status(input_file):
     wok.status()
 
 
-def fn_wok_fry(input_file):
+def fn_wok_fry(input_file, filters):
     wok = load_wok(input_file)
-    wok.fry()
+    wok.fry(filters=filters)
 
     
 def add_common_arguments(parser):
@@ -284,6 +236,7 @@ wok {get_version()} - add spyces to your python project
         'fry', subparsers=subparsers,
         function=fn_wok_fry,
         description='apply the wok recipe')
+    add_filters_argument(fry_parser)
     return parser
 
 
@@ -302,7 +255,7 @@ spyce {get_version()} - add spyces to python source files
         function=fn_spyce_list,
         description='list spyces in python source file')
     add_input_argument(list_parser)
-    add_key_filters_argument(list_parser)
+    add_filters_argument(list_parser)
     list_parser.add_argument(
         '-l', '--lines',
         dest='show_lines',
@@ -381,7 +334,7 @@ spyce {get_version()} - add spyces to python source files
         description='extract a spyce object from python source file')
     add_input_argument(extract_parser)
     add_output_argument(extract_parser, optional=False)
-    add_key_argument(extract_parser)
+    add_name_argument(extract_parser)
 
     ### del
     del_parser = build_parser(
@@ -391,7 +344,7 @@ spyce {get_version()} - add spyces to python source files
     add_input_argument(del_parser)
     add_output_argument(del_parser)
     add_backup_argument(del_parser)
-    add_key_filters_argument(del_parser, required=True)
+    add_filters_argument(del_parser, required=True)
 
     ### wok
     wok_parser = build_wok_parser(subparsers)
