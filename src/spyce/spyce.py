@@ -338,6 +338,8 @@ class SpycyFile(MutableMapping):
         self.content_version = 0
 
     def filter(self, spyce_filters):
+        if spyce_filters is None:
+            spyce_filters = []
         spyces = list(self.values())
         for spyce_filter in spyce_filters:
             new_spyces = []

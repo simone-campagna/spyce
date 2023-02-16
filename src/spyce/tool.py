@@ -181,6 +181,14 @@ def fn_wok_status(input_file):
     wok.status()
 
 
+def fn_wok_list(input_file, show_header, show_lines, show_conf):
+    wok = load_wok(input_file)
+    wok.list_spyces(
+        show_header=show_header,
+        show_lines=show_lines,
+        show_conf=show_conf)
+
+
 def fn_wok_fry(input_file, filters):
     wok = load_wok(input_file)
     wok.fry(filters=filters)
@@ -205,6 +213,27 @@ def add_common_arguments(parser):
         const=0,
         help='suppress warnings',
         **v_kwargs)
+
+
+def add_list_arguments(parser):
+    parser.add_argument(
+        '-c', '--conf',
+        dest='show_conf',
+        action='store_true',
+        default=False,
+        help='show spyce conf')
+    parser.add_argument(
+        '-l', '--lines',
+        dest='show_lines',
+        action='store_true',
+        default=False,
+        help='show spyce lines')
+    parser.add_argument(
+        '-H', '--no-header',
+        dest='show_header',
+        action='store_false',
+        default=True,
+        help='do not show table header lines')
 
 
 def build_parser(name, *, subparsers=None, function=None, **kwargs):
@@ -242,6 +271,13 @@ wok {get_version()} - add spyces to your python project
         function=fn_wok_status,
         description='show the project status')
 
+    ### list:
+    list_parser = build_parser(
+        'list', subparsers=subparsers,
+        function=fn_wok_list,
+        description='list spyces in current project')
+    add_list_arguments(list_parser)
+
     ### fry:
     fry_parser = build_parser(
         'fry', subparsers=subparsers,
@@ -267,24 +303,7 @@ spyce {get_version()} - add spyces to python source files
         description='list spyces in python source file')
     add_input_argument(list_parser)
     add_filters_argument(list_parser)
-    list_parser.add_argument(
-        '-c', '--conf',
-        dest='show_conf',
-        action='store_true',
-        default=False,
-        help='show spyce conf')
-    list_parser.add_argument(
-        '-l', '--lines',
-        dest='show_lines',
-        action='store_true',
-        default=False,
-        help='show spyce lines')
-    list_parser.add_argument(
-        '-H', '--no-header',
-        dest='show_header',
-        action='store_false',
-        default=True,
-        help='do not show table header lines')
+    add_list_arguments(list_parser)
 
     ### add
     add_parser = build_parser(
