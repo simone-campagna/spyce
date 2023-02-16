@@ -220,6 +220,48 @@ class Wok(WokMixin, Mapping):
         for wok_file in self.wok_files.values():
             wok_file.status(stream)
 
+    def list_spyces(self, stream=sys.stdout, show_header=True, filters=None, show_lines=False, show_conf=False):
+        def _print(text):
+            print(text, file=stream)
+        table = []
+        data = {}
+        for wok_file in self.wok_files.values():
+            if not wok_file.target_path.is_file():
+                continue
+            spycy_file = SpycyFile(wok_file.target_path)
+            names = spycy_file.filter(filters)
+            for name in names:
+                spyce_jar = spycy_file.get_spyce_jar(name)
+                num_chars = len(spyce_jar.get_text())
+                flavor = spyce_jar.flavor or ''
+                table.append((spyce_jar.section, spyce_jar.name, spyce_jar.spyce_type, flavor,
+                              f'{spyce_jar.start+1}:{spyce_jar.end+1}', str(num_chars),
+                              str(wok_file.target_rel_path)))
+                data[name] = (spycy_file, spyce_jar)
+        if table:
+            if show_header:
+                names.insert(0, None)
+                table.insert(0, ['section', 'name', 'type', 'flavor', 'lines', 'size', 'target'])
+            mlen = [max(len(row[c]) for row in table) for c in range(len(table[0]))]
+            if show_header:
+                names.insert(1, None)
+                table.insert(1, ['-' * ml for ml in mlen])
+
+            fmt = ' '.join(f'{{:{ml}s}}' for ml in mlen)
+            for name, row in zip(names, table):
+                _print(fmt.format(*row))
+                if name is not None:
+                    if show_conf:
+                        spyce_file = data[name][0]
+                        spyce = spycy_file[name]
+                        for line in yaml.dump(spyce.conf).split('\n'):
+                            _print('  ' + line)
+                    if show_lines:
+                        spyce_jar = data[name][1]
+                        for ln, line in enumerate(spyce.get_lines()):
+                            line_no = ln + spyce_jar.start + 1
+                            _print(f'  {line_no:<6d} {line.rstrip()}')
+
 
 def _build_err(filename, section, message):
     msg = f'wok file {filename}'
@@ -247,7 +289,7 @@ def parse_wok_file_spyce(base_dir, filename, file, name, data):
     except KeyError:
         raise _build_err(filename, f'wok.files.{file}.spyces.{name}', f'unknown flavor {flavor!r}')
     try:
-        g_args = flavor_class.parse_data(base_dir, filename, data)
+        g_args = flavor_class.parse_conf(base_dir, filename, data)
     except FlavorParseError as err:
         raise _build_err(filename, f'wok.files.{file}.spyces.{name}', str(err))
     defaults.update(g_args)

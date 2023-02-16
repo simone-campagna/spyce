@@ -7,6 +7,8 @@ import sys
 
 from pathlib import Path
 
+import yaml
+
 from .log import (
     configure_logging,
     set_trace,
@@ -14,6 +16,7 @@ from .log import (
 )
 from .spyce import (
     set_max_line_length,
+    SpyceFilter,
     SpycyFile,
     DEFAULT_BACKUP_FORMAT,
 )
@@ -63,12 +66,15 @@ def add_filters_argument(parser, required=False):
     parser.add_argument(
         '-f', '--filter',
         dest='filters',
-        metavar='[~][section/][name][:type]',
-        type=SpycyFile.build_filter,
+        metavar='FLT',
+        type=SpyceFilter.build,
         action='append',
         default=[],
         required=required,
-        help="add pattern to filter spyces, e.g. 'spyce_api', '~data/x.tgz', ':bytes'")
+        help="""\
+add spyce filter spyces; the format can contain 'name', '^section', ':type' and '%%flavor',
+where all components are optional. The name, section, type and flavor values are patterns,
+eventually preceded by ~ to reverse selection. For instance: '%%api', '^data wg*'""")
 
 
 def add_name_argument(parser, required=False):
@@ -78,7 +84,7 @@ def add_name_argument(parser, required=False):
         help='spyce name')
 
 
-def fn_spyce_list(input_file, filters, show_lines=False, show_header=True):
+def fn_spyce_list(input_file, filters, show_lines=False, show_conf=False, show_header=True):
     spycy_file = SpycyFile(input_file)
     table = []
     spyces = []
@@ -86,12 +92,13 @@ def fn_spyce_list(input_file, filters, show_lines=False, show_header=True):
     for name in names:
         spyce = spycy_file.get_spyce_jar(name)
         num_chars = len(spyce.get_text())
-        table.append((spyce.section, spyce.name, spyce.spyce_type, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
+        flavor = spyce.flavor or ''
+        table.append((spyce.section, spyce.name, spyce.spyce_type, flavor, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
         spyces.append(spyce)
     if table:
         if show_header:
             names.insert(0, None)
-            table.insert(0, ['section', 'name', 'type', 'lines', 'size'])
+            table.insert(0, ['section', 'name', 'type', 'flavor', 'lines', 'size'])
         mlen = [max(len(row[c]) for row in table) for c in range(len(table[0]))]
         if show_header:
             names.insert(1, None)
@@ -100,11 +107,16 @@ def fn_spyce_list(input_file, filters, show_lines=False, show_header=True):
         fmt = ' '.join(f'{{:{ml}s}}' for ml in mlen)
         for name, row in zip(names, table):
             print(fmt.format(*row))
-            if show_lines and name is not None:
+            if name is not None:
                 spyce = spycy_file[name]
-                for ln, line in enumerate(spyce.get_lines()):
-                    line_no = ln + spyce.start + 1
-                    print(f'  {line_no:<6d} {line.rstrip()}')
+                if show_conf:
+                    for line in yaml.dump(spyce.conf).split('\n'):
+                        print('  ' + line)
+                if show_lines:
+                    spyce_jar = spycy_file.get_spyce_jar(name)
+                    for ln, line in enumerate(spyce.get_lines()):
+                        line_no = ln + spyce_jar.start + 1
+                        print(f'  {line_no:<6d} {line.rstrip()}')
 
 
 
@@ -164,10 +176,17 @@ def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
             del spycy_file[name]
 
 
-
 def fn_wok_status(input_file):
     wok = load_wok(input_file)
     wok.status()
+
+
+def fn_wok_list(input_file, show_header, show_lines, show_conf):
+    wok = load_wok(input_file)
+    wok.list_spyces(
+        show_header=show_header,
+        show_lines=show_lines,
+        show_conf=show_conf)
 
 
 def fn_wok_fry(input_file, filters):
@@ -194,6 +213,27 @@ def add_common_arguments(parser):
         const=0,
         help='suppress warnings',
         **v_kwargs)
+
+
+def add_list_arguments(parser):
+    parser.add_argument(
+        '-c', '--conf',
+        dest='show_conf',
+        action='store_true',
+        default=False,
+        help='show spyce conf')
+    parser.add_argument(
+        '-l', '--lines',
+        dest='show_lines',
+        action='store_true',
+        default=False,
+        help='show spyce lines')
+    parser.add_argument(
+        '-H', '--no-header',
+        dest='show_header',
+        action='store_false',
+        default=True,
+        help='do not show table header lines')
 
 
 def build_parser(name, *, subparsers=None, function=None, **kwargs):
@@ -231,6 +271,13 @@ wok {get_version()} - add spyces to your python project
         function=fn_wok_status,
         description='show the project status')
 
+    ### list:
+    list_parser = build_parser(
+        'list', subparsers=subparsers,
+        function=fn_wok_list,
+        description='list spyces in current project')
+    add_list_arguments(list_parser)
+
     ### fry:
     fry_parser = build_parser(
         'fry', subparsers=subparsers,
@@ -256,18 +303,7 @@ spyce {get_version()} - add spyces to python source files
         description='list spyces in python source file')
     add_input_argument(list_parser)
     add_filters_argument(list_parser)
-    list_parser.add_argument(
-        '-l', '--lines',
-        dest='show_lines',
-        action='store_true',
-        default=False,
-        help='show spyce')
-    list_parser.add_argument(
-        '-H', '--no-header',
-        dest='show_header',
-        action='store_false',
-        default=True,
-        help='do not show table header lines')
+    add_list_arguments(list_parser)
 
     ### add
     add_parser = build_parser(
