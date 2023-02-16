@@ -7,6 +7,8 @@ import sys
 
 from pathlib import Path
 
+import yaml
+
 from .log import (
     configure_logging,
     set_trace,
@@ -78,7 +80,7 @@ def add_name_argument(parser, required=False):
         help='spyce name')
 
 
-def fn_spyce_list(input_file, filters, show_lines=False, show_header=True):
+def fn_spyce_list(input_file, filters, show_lines=False, show_conf=False, show_header=True):
     spycy_file = SpycyFile(input_file)
     table = []
     spyces = []
@@ -100,11 +102,16 @@ def fn_spyce_list(input_file, filters, show_lines=False, show_header=True):
         fmt = ' '.join(f'{{:{ml}s}}' for ml in mlen)
         for name, row in zip(names, table):
             print(fmt.format(*row))
-            if show_lines and name is not None:
+            if name is not None:
                 spyce = spycy_file[name]
-                for ln, line in enumerate(spyce.get_lines()):
-                    line_no = ln + spyce.start + 1
-                    print(f'  {line_no:<6d} {line.rstrip()}')
+                if show_conf:
+                    for line in yaml.dump(spyce.conf).split('\n'):
+                        print('  ' + line)
+                if show_lines:
+                    spyce_jar = spycy_file.get_spyce_jar(name)
+                    for ln, line in enumerate(spyce.get_lines()):
+                        line_no = ln + spyce_jar.start + 1
+                        print(f'  {line_no:<6d} {line.rstrip()}')
 
 
 
@@ -162,7 +169,6 @@ def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
     with spycy_file.refactor(output_file, backup=backup, backup_format=backup_format):
         for name in names:
             del spycy_file[name]
-
 
 
 def fn_wok_status(input_file):
@@ -257,11 +263,17 @@ spyce {get_version()} - add spyces to python source files
     add_input_argument(list_parser)
     add_filters_argument(list_parser)
     list_parser.add_argument(
+        '-c', '--conf',
+        dest='show_conf',
+        action='store_true',
+        default=False,
+        help='show spyce conf')
+    list_parser.add_argument(
         '-l', '--lines',
         dest='show_lines',
         action='store_true',
         default=False,
-        help='show spyce')
+        help='show spyce lines')
     list_parser.add_argument(
         '-H', '--no-header',
         dest='show_header',

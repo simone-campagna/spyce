@@ -58,13 +58,20 @@ class Flavor(metaclass=FlavorMeta):
         return cls.__registry__[flavor]
 
     @classmethod
-    def parse_data(cls, base_dir, filename, data):
+    def parse_conf(cls, base_dir, filename, data):
         result = {}
         if 'section' in data:
             result['section'] = data['section']
         if 'type' in data:
             result['spyce_type'] = data['type']
         return result
+
+    def conf(self):
+        return {
+            'flavor': self.flavor(),
+            # 'section': self.section,
+            # 'type': self.spyce_type,
+        }
 
     @classmethod
     def _parse_key(cls, data, key, types):
@@ -83,6 +90,7 @@ class Flavor(metaclass=FlavorMeta):
             section=self.section,
             name=self.name,
             init=self.content(),
+            conf=self.conf(),
         )
 
     def _default_section(self):
@@ -127,13 +135,18 @@ class PathFlavor(Flavor):
         super().__init__(section=section, name=name, spyce_type=spyce_type)
 
     @classmethod
-    def parse_data(cls, base_dir, filename, data):
-        result = super().parse_data(base_dir, filename, data)
+    def parse_conf(cls, base_dir, filename, data):
+        result = super().parse_conf(base_dir, filename, data)
         path = cls._parse_key(data, 'path', (str, Path))
         path = Path(path)
         if not path.is_absolute():
             path = Path(base_dir) / path
         result['path'] = path
+        return result
+
+    def conf(self):
+        result = super().conf()
+        result['path'] = str(self.path)
         return result
 
     def _check_path(self):
@@ -207,10 +220,15 @@ class UrlFlavor(Flavor):
         return 'url'
 
     @classmethod
-    def parse_data(cls, base_dir, filename, data):
-        result = super().parse_data(base_dir, filename, data)
+    def parse_conf(cls, base_dir, filename, data):
+        result = super().parse_conf(base_dir, filename, data)
         url = cls._parse_key(data, 'url', (str,))
         result['url'] = url
+        return result
+
+    def conf(self):
+        result = super().conf()
+        result['url'] = str(self.url)
         return result
 
     def _default_name(self):
@@ -239,12 +257,17 @@ class ApiFlavor(Flavor):
         self._check_implementation()
 
     @classmethod
-    def parse_data(cls, base_dir, filename, data):
-        result = super().parse_data(base_dir, filename, data)
+    def parse_conf(cls, base_dir, filename, data):
+        result = super().parse_conf(base_dir, filename, data)
         implementation = data.get('implementation', api.default_api_implementation())
         if implementation not in api.get_api_implementations():
             raise FlavorParseError(f'unknown api implementation {implementation!r}')
         result['implementation'] = implementation
+        return result
+
+    def conf(self):
+        result = super().conf()
+        result['implementation'] = str(self.implementation)
         return result
 
     @classmethod

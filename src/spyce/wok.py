@@ -247,7 +247,7 @@ def parse_wok_file_spyce(base_dir, filename, file, name, data):
     except KeyError:
         raise _build_err(filename, f'wok.files.{file}.spyces.{name}', f'unknown flavor {flavor!r}')
     try:
-        g_args = flavor_class.parse_data(base_dir, filename, data)
+        g_args = flavor_class.parse_conf(base_dir, filename, data)
     except FlavorParseError as err:
         raise _build_err(filename, f'wok.files.{file}.spyces.{name}', str(err))
     defaults.update(g_args)
