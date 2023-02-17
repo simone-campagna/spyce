@@ -11,6 +11,7 @@ from .color import colored
 from .flavor import Flavor, FlavorParseError
 from .log import LOG
 from .spyce import SpyceError, SpycyFile
+from .util import diff_files
 
 __all__ = [
     'default_wok_filename',
@@ -61,6 +62,15 @@ class WokMixin:
         if self.base_dir in path.parents:
             return path.relative_to(self.base_dir)
         return path
+
+
+def select_lines(classified_lines, selected_kinds):
+    kinds = set(selected_kinds)
+    result = []
+    for kind, line in classified_lines:
+        if kind in kinds:
+            result.append(line)
+    return result
 
 
 class WokFile(WokMixin, Mapping):
@@ -137,7 +147,7 @@ class WokFile(WokMixin, Mapping):
                 print(f'{hdr[level]} {text}', file=stream)
 
         def _bcg(text):
-            return colored(text, 'green', attrs=['bold'])
+            return colored(text, 'green', styles=['bold'])
 
         def _cg(text):
             return colored(text, "green")
@@ -164,35 +174,52 @@ class WokFile(WokMixin, Mapping):
                         _log(0, f'target is younger than source')
                     target_spycy_file = SpycyFile(target_path)
                     source_spycy_file = SpycyFile(source_path)
-                    target_code_lines = target_spycy_file.code_lines()
-                    source_code_lines = source_spycy_file.code_lines()
+                    target_code_lines = select_lines(target_spycy_file.classify_lines(), {'code'})
+                    source_code_lines = select_lines(source_spycy_file.classify_lines(), {'code'})
                     if source_code_lines != target_code_lines:
-                        _log(1, f'target and source does not match; first diff is:')
-                        for s_iline, t_iline in itertools.zip_longest(source_code_lines, target_code_lines, fillvalue=None):
-                            if s_iline is None:
-                                l_index, l_line = '-' , '(missing)'
-                                r_index, r_line = t_iline
-                            elif t_iline is None:
-                                l_index, l_line = s_iline
-                                r_index, r_line = '-' , '(missing)'
-                            elif s_iline[1] != t_iline[1]:
-                                l_index, l_line = s_iline
-                                r_index, r_line = t_iline
-                            else:
-                                continue
-                            l_line = l_line.rstrip('\n')
-                            r_line = r_line.rstrip('\n')
-                            _print(f'   @{l_index} : {r_index}')
-                            _print(f'   -{l_line}')
-                            _print(f'   +{r_line}')
-                            break
+                        _log(1, f'target and source code does not match')
                 for flavor in self.spyces.values():
                     name = flavor.name
                     if name not in target_spycy_file:
                         _log(2, f'target {target_rel_path}: spyce {name} is missing')
+                    else:
+                        spyce = target_spycy_file[name]
+                        if flavor.conf() != spyce.conf:
+                            _log(2, f'target {target_rel_path}: spyce {name}: configuration changed')
+                            _log(2, f'source: {flavor.conf()}')
+                            _log(2, f'target: {spyce.conf}')
                 for name in target_spycy_file:
                     if name not in self.spyces:
                         _log(2, f'target {target_rel_path}: spyce {name} not expected')
+
+    def diff(self, stream=sys.stdout):
+        _print = functools.partial(print, file=stream)
+        source_rel_path, source_path = self.source_rel_path, self.source_path
+        target_rel_path, target_path = self.target_rel_path, self.target_path
+        if not target_path.is_file():
+            _print(f'target {target_rel_path}: missing file')
+            return
+        source_spycy_file = SpycyFile(source_path)
+        target_spycy_file = SpycyFile(target_path)
+        place_holder = '//a1d4ce46-d476-48d3-8458-c79390e07527//'
+
+        def _select_lines(classified_lines):
+            result = []
+            for kind, line in classified_lines:
+                # if kind not in {'spyce-header', 'code'}:
+                if kind not in {'code'}:
+                    line = place_holder
+                result.append(line)
+            return result
+
+        source_code_lines = _select_lines(source_spycy_file.classify_lines())
+        target_code_lines = _select_lines(target_spycy_file.classify_lines())
+        collapse_lines = lambda line: place_holder in line
+        collapse_format = '... ({num} spyce lines)'
+        diff_files(source_rel_path, target_rel_path, source_code_lines, target_code_lines,
+                   collapse_lines=collapse_lines,
+                   collapse_format=collapse_format,
+                   stream=stream)
 
 
 class Wok(WokMixin, Mapping):
@@ -219,6 +246,10 @@ class Wok(WokMixin, Mapping):
     def status(self, stream=sys.stdout):
         for wok_file in self.wok_files.values():
             wok_file.status(stream)
+
+    def diff(self, stream=sys.stdout):
+        for wok_file in self.wok_files.values():
+            wok_file.diff(stream)
 
     def list_spyces(self, stream=sys.stdout, show_header=True, filters=None, show_lines=False, show_conf=False):
         def _print(text):

@@ -181,12 +181,18 @@ def fn_wok_status(input_file):
     wok.status()
 
 
-def fn_wok_list(input_file, show_header, show_lines, show_conf):
+def fn_wok_diff(input_file):
+    wok = load_wok(input_file)
+    wok.diff()
+
+
+def fn_wok_list(input_file, show_header, show_lines, show_conf, filters):
     wok = load_wok(input_file)
     wok.list_spyces(
         show_header=show_header,
         show_lines=show_lines,
-        show_conf=show_conf)
+        show_conf=show_conf,
+        filters=filters)
 
 
 def fn_wok_fry(input_file, filters):
@@ -271,12 +277,19 @@ wok {get_version()} - add spyces to your python project
         function=fn_wok_status,
         description='show the project status')
 
+    ### diff:
+    diff_parser = build_parser(
+        'diff', subparsers=subparsers,
+        function=fn_wok_diff,
+        description='show diffs')
+
     ### list:
     list_parser = build_parser(
         'list', subparsers=subparsers,
         function=fn_wok_list,
         description='list spyces in current project')
     add_list_arguments(list_parser)
+    add_filters_argument(list_parser)
 
     ### fry:
     fry_parser = build_parser(

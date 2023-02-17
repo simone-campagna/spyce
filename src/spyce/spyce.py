@@ -65,7 +65,7 @@ UNDEF = object()
 class Spyce(metaclass=SpyceMeta):
     __registry__ = {}
 
-    def __init__(self, section, name, init, conf=None):
+    def __init__(self, section, name, init, conf=None, path=None):
         if isinstance(init, (str, bytes)):
             self.content = init
             self.lines = self.encode(self.content)
@@ -75,6 +75,9 @@ class Spyce(metaclass=SpyceMeta):
         self.section = section
         self.name = name
         self.conf = conf or {}
+        if path:
+            path = Path(path)
+        self.path = path
 
     @property
     def flavor(self):
@@ -223,7 +226,10 @@ class SpyceJar:
     @property
     def spyce(self):
         if self._spyce is None:
-            self._spyce = self.spyce_class(section=self.section, name=self.name, init=self.get_lines(), conf=self.conf)
+            self._spyce = self.spyce_class(
+                section=self.section, name=self.name,
+                init=self.get_lines(), conf=self.conf,
+                path=self.spycy_file.path)
         return self._spyce
 
     def get_lines(self, headers=False):
@@ -277,10 +283,10 @@ class Pattern:
 
 
 class SpyceFilter:
-    __regex__ = re.compile(r'(?P<op>[\^\:\%])?(?P<pattern>[^\^\:\%]+)\s*')
-    __key_dict__ = {'': 'name', ':': 'spyce_type', '^': 'section', '%': 'flavor'}
+    __regex__ = re.compile(r'(?P<op>[\^\:\%\/])?(?P<pattern>[^\^\:\%]+)\s*')
+    __key_dict__ = {'': 'name', ':': 'spyce_type', '^': 'section', '%': 'flavor', '/': 'path'}
 
-    def __init__(self, section=None, name=None, spyce_type=None, flavor=None):
+    def __init__(self, section=None, name=None, spyce_type=None, flavor=None, path=None):
         self.patterns = []
         if section:
             self.patterns.append(('section', Pattern.build(section), attrgetter('section')))
@@ -290,13 +296,18 @@ class SpyceFilter:
             self.patterns.append(('spyce_type', Pattern.build(spyce_type), attrgetter('spyce_type')))
         if flavor:
             self.patterns.append(('flavor', Pattern.build(flavor), attrgetter('flavor')))
+        if path:
+            if not path.startswith('/'):
+                path = '*/' + path
+            self.patterns.append(('path', Pattern.build(path), attrgetter('path')))
 
     @classmethod
     def build(cls, value):
         # name :type ^section %flavor
         kwargs = {}
-        for op, pattern in cls.__regex__.findall(value):
-            kwargs[cls.__key_dict__[op]] = pattern
+        for token in value.split():
+            for op, pattern in cls.__regex__.findall(token):
+                kwargs[cls.__key_dict__[op]] = pattern
         return cls(**kwargs)
 
     def __call__(self, spyce):
@@ -352,17 +363,23 @@ class SpycyFile(MutableMapping):
         selected_names = {spyce.name for spyce in spyces}
         return [name for name in self if name in selected_names]
 
-    def code_lines(self):
-        spyced_indices = set()
+    def classify_lines(self):
+        sh_indices = set()
+        sd_indices = set()
         for jar in self.spyce_jars.values():
-            spyced_indices.update(range(jar.start, jar.end))
-        cur_index = 0
-        cur_lines = []
+            sh_start, sh_end = jar.start, jar.end
+            sd_start, sd_end = sh_start + jar.num_params + 1, sh_end - 1
+            sh_indices.update(range(sh_start, sd_start))
+            sh_indices.update(range(sd_end, sh_end))
+            sd_indices.update(range(sd_start, sd_end))
         for index, line in enumerate(self.lines):
-            if index not in spyced_indices:
-                cur_lines.append((cur_index, line))
-                cur_index += 1
-        return cur_lines
+            if index in sh_indices:
+                kind = 'spyce-header'
+            elif index in sd_indices:
+                kind = 'spyce-data'
+            else:
+                kind = 'code'
+            yield (kind, line)
 
     def _parse_lines(self):
         filename = self.filename
