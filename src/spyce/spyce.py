@@ -195,7 +195,7 @@ class BytesSpyce(Spyce):
 
 
 class SpyceJar:
-    def __init__(self, spycy_file, section, name, spyce_type, start, end, conf=None):
+    def __init__(self, spycy_file, section, name, spyce_type, start, end):
         self.spycy_file = spycy_file
         self.section = section
         self.name = name
@@ -210,7 +210,7 @@ class SpyceJar:
             raise SpyceError(f"{self.spycy_file.filename}@{self.start + 1}: unknown spyce type {spyce_type!r}")
         self.spyce_class = spyce_class
         self._spyce = None
-        self.conf = conf or {}
+        self.conf = {'section': self.section, 'spyce_type': self.spyce_type}
         self.num_params = 0
 
     @property
@@ -491,8 +491,9 @@ class SpycyFile(MutableMapping):
         fq_name = spyce.fq_name
         spyce_lines = [f'# spyce: start {fq_name}\n']
         for key, value in spyce.conf.items():
-            serialized_value = json.dumps(value)
-            spyce_lines.append(f'# spyce: conf: {key}={serialized_value}\n')
+            if key not in {'section', 'spyce_type'}:
+                serialized_value = json.dumps(value)
+                spyce_lines.append(f'# spyce: conf: {key}={serialized_value}\n')
         spyce_lines.extend(spyce.encode(content))
         spyce_lines.append(f'# spyce: end {fq_name}\n')
         self.lines[start:start] = spyce_lines

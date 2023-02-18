@@ -28,7 +28,7 @@ from .flavor import (
     UrlFlavor,
 )
 from .version import get_version
-from .wok import load_wok, default_wok_filename, find_wok_path
+from .wok import load_wok, import_wok, default_wok_filename, find_wok_path
 from . import api
 
 
@@ -176,18 +176,29 @@ def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
             del spycy_file[name]
 
 
+def _load_wok(input_file):
+    if input_file is None:
+        return load_wok()
+    if input_file.file_type == 'wok-file':
+        return load_wok(input_file.file_name)
+    elif input_file.file_type == 'spycy-file':
+        return import_wok(input_file.file_name)
+    else:
+        raise ValueError(input_file)
+
+
 def fn_wok_status(input_file):
-    wok = load_wok(input_file)
+    wok = _load_wok(input_file)
     wok.status()
 
 
 def fn_wok_diff(input_file):
-    wok = load_wok(input_file)
+    wok = _load_wok(input_file)
     wok.diff()
 
 
 def fn_wok_list(input_file, show_header, show_lines, show_conf, filters):
-    wok = load_wok(input_file)
+    wok = _load_wok(input_file)
     wok.list_spyces(
         show_header=show_header,
         show_lines=show_lines,
@@ -254,6 +265,20 @@ def build_parser(name, *, subparsers=None, function=None, **kwargs):
     return parser
 
 
+class InputFile:
+    def __init__(self, file_type, file_name):
+        self.file_type = file_type
+        self.file_name = Path(file_name)
+
+
+class InputFileType:
+    def __init__(self, file_type):
+        self.file_type = file_type
+
+    def __call__(self, file_name):
+        return InputFile(file_type=self.file_type, file_name=file_name)
+
+
 def build_wok_parser(subparsers=None):
     parser = build_parser(
         name='wok',  subparsers=subparsers,
@@ -264,11 +289,22 @@ wok {get_version()} - add spyces to your python project
     parser.set_defaults(
         function=fn_wok_status,
     )
-    parser.add_argument(
-        '-i', '--input-file',
-        type=Path,
-        default=None,
-        help='input wok file')
+    input_group = parser.add_argument_group('input')
+    input_mgrp = input_group.add_mutually_exclusive_group()
+    input_kwargs = {'dest': 'input_file', 'default': None}
+    input_mgrp.add_argument(
+        '-i', '--input-wok-file',
+        metavar='WOK_FILE',
+        type=InputFileType('wok-file'),
+        help='input wok file',
+        **input_kwargs)
+    input_mgrp.add_argument(
+        '-s', '--input-spycy-file',
+        metavar='SPYCY_FILE',
+        type=InputFileType('spycy-file'),
+        help='input spycy file',
+        **input_kwargs)
+
     subparsers = parser.add_subparsers()
 
     ### status:
@@ -407,7 +443,6 @@ def runner(parser):
     configure_logging(ns.verbose_level)
 
     ns_vars = vars(ns)
-
     function = ns.function
     f_args = {}
     for p_name, p_obj in inspect.signature(function).parameters.items():
