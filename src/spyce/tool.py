@@ -72,9 +72,9 @@ def add_filters_argument(parser, required=False):
         default=[],
         required=required,
         help="""\
-add spyce filter spyces; the format can contain 'name', '^section', ':type' and '%%flavor',
+add spyce filter spyces; the format can contain 'name', ':type' and '^flavor',
 where all components are optional. The name, section, type and flavor values are patterns,
-eventually preceded by ~ to reverse selection. For instance: '%%api', '^data wg*'""")
+eventually preceded by ~ to reverse selection. For instance: '^api', '^url *wg*'""")
 
 
 def add_name_argument(parser, required=False):
@@ -153,8 +153,8 @@ def fn_spyce_mix(input_file, output_file, backup, backup_format, max_line_length
     if max_line_length is not None:
         set_max_line_length(max_line_length)
 
-    wok = Wok.import_spycy_file(input_file, target_path=output_file)
-    wok.mix()
+    wok = Wok.import_spycy_file(input_file)
+    wok.mix(target_path=output_file)
 
 
 def fn_spyce_extract(input_file, output_file, name):
@@ -172,14 +172,14 @@ def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
             del spycy_file[name]
 
 
-def fn_spyce_status(input_file):
+def fn_spyce_status(input_file, filters=None, info_level=0):
     wok = Wok.import_spycy_file(input_file)
-    wok.status()
+    wok.status(filters=filters, info_level=info_level)
 
 
-def fn_spyce_diff(input_file):
+def fn_spyce_diff(input_file, filters=None, info_level=0):
     wok = Wok.import_spycy_file(input_file)
-    wok.diff()
+    wok.diff(filters=filters, info_level=info_level)
 
 
 def fn_spyce_list(input_file, show_header, show_lines, show_conf, filters):
@@ -316,6 +316,7 @@ spyce {get_version()} - add spyces to python source files
         function=fn_spyce_status,
         description='show the project status')
     add_input_argument(status_parser)
+    add_filters_argument(status_parser)
 
     ### diff:
     diff_parser = build_parser(
@@ -323,6 +324,7 @@ spyce {get_version()} - add spyces to python source files
         function=fn_spyce_diff,
         description='show diffs')
     add_input_argument(diff_parser)
+    add_filters_argument(diff_parser)
 
     return parser
 

@@ -193,6 +193,12 @@ class SpyceJar:
         self.conf = dict(conf or {})
         self.num_params = 0
 
+    def index_range(self, headers=False):
+        if headers:
+            return self.start, self.end
+        else:
+            return self.start + self.num_params + 1, self.end - 1
+
     @property
     def spyce_type(self):
         return self.conf.get('type', None)
@@ -275,7 +281,7 @@ class Pattern:
 
 
 class SpyceFilter:
-    __regex__ = re.compile(r'(?P<op>[\^\:\%\/])?(?P<pattern>[^\^\:\%]+)\s*')
+    __regex__ = re.compile(r'(?P<op>[\^\:\/])?(?P<pattern>[^\^\:]+)\s*')
     __key_dict__ = {'': 'name', ':': 'spyce_type', '^': 'flavor', '/': 'path'}
 
     def __init__(self, name=None, spyce_type=None, flavor=None, path=None):
@@ -351,24 +357,6 @@ class SpycyFile(MutableMapping):
                 break
         selected_names = {spyce.name for spyce in spyces}
         return [name for name in self if name in selected_names]
-
-    def classify_lines(self):
-        sh_indices = set()
-        sd_indices = set()
-        for jar in self.spyce_jars.values():
-            sh_start, sh_end = jar.start, jar.end
-            sd_start, sd_end = sh_start + jar.num_params + 1, sh_end - 1
-            sh_indices.update(range(sh_start, sd_start))
-            sh_indices.update(range(sd_end, sh_end))
-            sd_indices.update(range(sd_start, sd_end))
-        for index, line in enumerate(self.lines):
-            if index in sh_indices:
-                kind = 'spyce-header'
-            elif index in sd_indices:
-                kind = 'spyce-data'
-            else:
-                kind = 'code'
-            yield (kind, line)
 
     def _parse_lines(self):
         filename = self.filename
