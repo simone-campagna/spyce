@@ -29,6 +29,7 @@ from .flavor import (
 )
 from .version import get_version
 from .wok import (
+    Before, After, Begin, End,
     Wok,
     DEFAULT_BACKUP_FORMAT,
 )
@@ -53,18 +54,6 @@ def add_output_argument(parser, optional=True):
         **kwargs)
 
 
-def add_backup_argument(parser):
-    parser.add_argument(
-        '-b', '--backup',
-        default=False,
-        action='store_true',
-        help="save backup after changes")
-    parser.add_argument(
-        '-B', '--backup-format',
-        default=DEFAULT_BACKUP_FORMAT,
-        help=f'set backup format (default: {DEFAULT_BACKUP_FORMAT!r}')
-
-
 def add_filters_argument(parser, required=False):
     parser.add_argument(
         '-f', '--filter',
@@ -76,7 +65,7 @@ def add_filters_argument(parser, required=False):
         required=required,
         help="""\
 add spyce filter spyces; the format can contain 'name', ':type' and '^flavor',
-where all components are optional. The name, section, type and flavor values are patterns,
+where all components are optional. The name, type and flavor values are patterns,
 eventually preceded by ~ to reverse selection. For instance: '^api', '^url *wg*'""")
 
 
@@ -93,8 +82,8 @@ class FlavorType:
             self.flavor_class = flavor_class
             self.value = value
 
-        def __call__(self, name, spyce_type=None, section=None):
-            obj = self.flavor_class(self.value, name=name, section=section, spyce_type=spyce_type)
+        def __call__(self, name, spyce_type=None):
+            obj = self.flavor_class(self.value, name=name, spyce_type=spyce_type)
             return obj
 
         def __str__(self):
@@ -116,7 +105,7 @@ class FlavorType:
         return self.__registry__[key]
 
 
-def fn_spyce_mix(input_file, output_file, backup, backup_format, max_line_length):
+def fn_spyce_mix(input_file, output_file, max_line_length):
     if max_line_length is not None:
         set_max_line_length(max_line_length)
 
@@ -131,23 +120,20 @@ def fn_spyce_extract(input_file, output_file, name):
     spyce.write_file(output_file)
 
 
-def fn_spyce_add(input_file, output_file, flavor_builder, section, name, spyce_type, backup, backup_format, max_line_length, replace):
+def fn_spyce_set(input_file, output_file, flavor_builder, name, spyce_type, max_line_length, replace, position, empty=False):
     if max_line_length is not None:
         set_max_line_length(max_line_length)
     flavor = flavor_builder(
-        section=section,
         name=name,
         spyce_type=spyce_type)
     wok = Wok(input_file)
-    wok.add_flavor(flavor, output_file=output_file, replace=replace)
+    wok.set_flavor(flavor, output_file=output_file,
+                   replace=replace, position=position, empty=empty)
 
 
-def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
-    spycy_file = SpycyFile(input_file)
-    names = spycy_file.filter(filters)
-    with spycy_file.refactor(output_file, backup=backup, backup_format=backup_format):
-        for name in names:
-            del spycy_file[name]
+def fn_spyce_del(input_file, output_file, filters, content_only=False):
+    wok = Wok(input_file)
+    wok.del_spyces(output_file=output_file, filters=filters, content_only=content_only)
 
 
 def fn_spyce_status(input_file, filters=None, info_level=0):
@@ -262,7 +248,6 @@ spyce {get_version()} - add spyces to python source files
         description='mix spyces in python source file')
     add_input_argument(mix_parser)
     add_output_argument(mix_parser)
-    add_backup_argument(mix_parser)
     add_filters_argument(mix_parser)
     mix_parser.add_argument(
         '-m', '--max-line-length',
@@ -279,40 +264,61 @@ spyce {get_version()} - add spyces to python source files
     add_name_argument(extract_parser)
 
     ### add
-    add_parser = build_parser(
-        'add', subparsers=subparsers,
-        function=fn_spyce_add,
-        description='add or replace spyces in python source file')
-    add_input_argument(add_parser)
-    add_output_argument(add_parser)
-    add_backup_argument(add_parser)
+    set_parser = build_parser(
+        'set', subparsers=subparsers,
+        function=fn_spyce_set,
+        description='set spyces in python source file')
+    add_input_argument(set_parser)
+    add_output_argument(set_parser)
 
-    add_parser.add_argument(
+    set_parser.add_argument(
         '-n', '--name',
         default=None,
         help='spyce name')
 
-    add_parser.add_argument(
+    set_parser.add_argument(
         '-m', '--max-line-length',
         metavar='LEN',
         default=None,
         help=f'set max data line length (default: {get_max_line_length()})')
 
-    add_parser.add_argument(
+    set_parser.add_argument(
         '-t', '--type',
         dest='spyce_type',
         choices=['text', 'bytes'],
         default=None,
         help="spyce type (default: 'text' for source spyces, else 'bytes')")
 
-    add_parser.add_argument(
-        '-s', '--section',
-        choices=['source', 'data'],
-        default=None,
-        help='spyce section')
+    pos_group = set_parser.add_argument_group('position')
+    pos_kwargs = {'dest': 'position', 'default': None}
+    pos_group.add_argument(
+        '-B', '--before',
+        type=Before.build,
+        help='add before spyces',
+        **pos_kwargs)
+    pos_group.add_argument(
+        '-A', '--after',
+        type=After.build,
+        help='add after spyces',
+        **pos_kwargs)
+    pos_group.add_argument(
+        '-b', '--begin',
+        action='store_const', const=Begin(),
+        help='add at the beginning of the file',
+        **pos_kwargs)
+    pos_group.add_argument(
+        '-e', '--end',
+        action='store_const', const=End(),
+        help='add at the end of the file',
+        **pos_kwargs)
 
-    c_group = add_parser.add_argument_group('spyce')
-    c_mgrp = add_parser.add_mutually_exclusive_group(required=True)
+    set_parser.add_argument(
+        '-E', '--empty',
+        action='store_true', default=False,
+        help='add empty spyce (no contents)')
+
+    c_group = set_parser.add_argument_group('spyce')
+    c_mgrp = set_parser.add_mutually_exclusive_group(required=True)
     c_kwargs = {'dest': 'flavor_builder'}
     api_flavor = FlavorType(ApiFlavor)
     c_mgrp.add_argument(
@@ -346,7 +352,7 @@ spyce {get_version()} - add spyces to python source files
         type=FlavorType(UrlFlavor),
         help='add url',
         **c_kwargs)
-    add_parser.add_argument(
+    set_parser.add_argument(
         '-r', '--replace',
         action='store_true', default=False,
         help='replace existing spyce with the same name')
@@ -358,8 +364,11 @@ spyce {get_version()} - add spyces to python source files
         description='remove spyces from python source file')
     add_input_argument(del_parser)
     add_output_argument(del_parser)
-    add_backup_argument(del_parser)
     add_filters_argument(del_parser, required=True)
+    del_parser.add_argument(
+        '-c', '--content-only',
+        action='store_true', default=False,
+        help='remove only spyce content')
 
     ### status:
     status_parser = build_parser(

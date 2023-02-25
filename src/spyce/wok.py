@@ -1,3 +1,4 @@
+import abc
 import functools
 import itertools
 import json
@@ -13,7 +14,7 @@ import yaml
 from .color import colored, Console, C
 from .flavor import Flavor, FlavorParseError
 from .log import LOG
-from .spyce import SpyceError, SpycyFile, Spyce, SpyceJar
+from .spyce import SpyceError, SpycyFile, Spyce, SpyceJar, SpyceFilter
 from .util import diff_files
 
 __all__ = [
@@ -23,6 +24,59 @@ __all__ = [
 
 
 DEFAULT_BACKUP_FORMAT = '{path}.bck.{timestamp}'
+
+
+class Position(abc.ABC):
+    @abc.abstractmethod
+    def __call__(self, spyce_file):
+        raise NotImplemented()
+
+
+class Begin(Position):
+    def __call__(self, spyce_file):
+        for l_index, line in enumerate(spyce_file.lines):
+            if not line.startswith('#!'):
+                return l_index
+        return 0
+
+
+class End(Position):
+    def __call__(self, spyce_file):
+        return len(spyce_file.lines)
+
+
+class _Relative(Position):
+    def __init__(self, filters):
+        self.filters = filters
+
+    @classmethod
+    def build(cls, value):
+        return cls([SpyceFilter.build(value)])
+
+    def filtered_spyce_jars(self, spyce_file):
+        spyce_jars = [spyce_file[name] for name in spyce_file.filter(self.filters)]
+        if not spyce_jars:
+            raise SpyceError(f'filters {self.filters}: 0 spyces selected')
+        return spyce_jars
+
+class Before(_Relative):
+    def __call__(self, spyce_file):
+        spyce_jars = self.filtered_spyce_jars(spyce_file)
+        return min(spyce_jar.start for spyce_jar in self.filtered_spyce_jars(spyce_file))
+
+
+class After(_Relative):
+    def __call__(self, spyce_file):
+        spyce_jars = self.filtered_spyce_jars(spyce_file)
+        return max(spyce_jar.end for spyce_jar in self.filtered_spyce_jars(spyce_file))
+
+
+class AtLine(Position):
+    def __init__(self, line_index):
+        self.line_index = line_index
+
+    def __call__(self, spyce_file):
+        return self.line_index
 
 
 class MutableSpycyFile(MutableMapping, SpycyFile):
@@ -35,49 +89,36 @@ class MutableSpycyFile(MutableMapping, SpycyFile):
             if spyce_jar.start >= l_start:
                 spyce_jar.start += l_diff
                 spyce_jar.end += l_diff
-        for section in self.section:
-            if self.section[section] is not None and self.section[section] > l_start:
-                self.section[section] += l_diff
 
     def __delitem__(self, name):
-        spyce_jar = self.spyce_jars.pop(name)
-        del self.lines[spyce_jar.start:spyce_jar.end]
-        self._update_lines(spyce_jar.start, -(spyce_jar.end - spyce_jar.start))
+        self.del_spyce(name, content_only=False)
+
+    def del_spyce(self, name, content_only=False):
+        if content_only:
+            spyce_jar = self.spyce_jars[name]
+            start, end = spyce_jar.index_range(headers=False)
+        else:
+            spyce_jar = self.spyce_jars.pop(name)
+            start, end = spyce_jar.index_range(headers=True)
+        del self.lines[start:end]
+        self._update_lines(spyce_jar.start, -(end - start))
         self.content_version += 1
 
     def __setitem__(self, name, spyce):
-        self.add_spyce(name, spyce)
+        self.set_spyce(name, spyce)
 
-    def add_spyce(self, name, spyce, section=None):
+    def set_spyce(self, name, spyce, empty=False, position=None):
+        if isinstance(spyce, Flavor):
+            spyce = flavor()
         if not isinstance(spyce, Spyce):
             raise TypeError(spyce)
-        if section is None:
-            section = 'data' if spyce.spyce_type == 'bytes' else 'source'
-
-        section_index = dict(self.section)
-        explicit_section = True
-        if section_index['source'] is None:
-            explicit_section = False
-            for l_index, line in enumerate(self.lines):
-                if not line.startswith('#!'):
-                    section_index['source'] = l_index
-                    break
-
-        if section_index['data'] is None:
-            explicit_section = False
-            section_index['data'] = len(self.lines)
-
-        sections = sorted(section_index.items(), key=lambda x: x[1])
-        cats = {}
-        for spyce_name, spyce_jar in self.items():
-            cat = None
-            for kind, index in sections:
-                if spyce_jar.start > index:
-                    cat = kind
-            cats.setdefault(cat, []).append(spyce_jar)
 
         name = spyce.name
-        content = spyce.get_content()
+        spyce_type = spyce.spyce_type
+        if empty:
+            content_lines = None
+        else:
+            content_lines = spyce.encode(spyce.get_content())
 
         self.content_version += 1
         deleted_spyce_jar = self.spyce_jars.get(name, None)
@@ -85,17 +126,21 @@ class MutableSpycyFile(MutableMapping, SpycyFile):
             # replace existing block
             del self[name]
             start = deleted_spyce_jar.start
+            if position is None:
+                position = AtLine(start)
         else:
-            if explicit_section and cats.get(section, None):
-                start = max(spc.end for spc in cats[section])
-            else:
-                start = section_index[section]
-        spyce_lines = [f'# spyce: start {spyce.name}\n']
+            if position is None:
+                if spyce_type == 'text':
+                    position = Begin()
+                else:
+                    position = End()
+        start = position(self)
+        spyce_lines = [f'# spyce: start {name}\n']
         for key, value in spyce.conf.items():
-            if key not in {'section', 'spyce_type'}:
-                serialized_value = json.dumps(value)
-                spyce_lines.append(f'# spyce: - {key}={serialized_value}\n')
-        spyce_lines.extend(spyce.encode(content))
+            serialized_value = json.dumps(value)
+            spyce_lines.append(f'# spyce: - {key}={serialized_value}\n')
+        if content_lines is not None:
+            spyce_lines.extend(content_lines)
         spyce_lines.append(f'# spyce: end {spyce.name}\n')
         self.lines[start:start] = spyce_lines
         l_diff = len(spyce_lines)
@@ -172,14 +217,23 @@ class Wok(MutableSpycyFile):
             target_rel_path = self.rel_path(target_path)
         return source_rel_path, source_path, target_rel_path, target_path
 
-    def add_flavor(self, flavor, output_file=None, replace=False):
+    def set_flavor(self, flavor, output_file=None, replace=False, position=None, empty=False):
         source_rel_path, source_path, target_rel_path, target_path = self.__paths(output_file)
 
         LOG.info(f'{source_rel_path} -> {target_rel_path}')
         if flavor.name in self and not replace:
             raise SpyceError(f'cannot overwrite spyce {flavor.name}')
         with self.refactor(target_path):
-            self.add_spyce(flavor.name, flavor(), section=flavor.section)
+            self.set_spyce(flavor.name, flavor(), position=position, empty=empty)
+
+    def del_spyces(self, output_file=None, filters=None, content_only=False):
+        source_rel_path, source_path, target_rel_path, target_path = self.__paths(output_file)
+
+        LOG.info(f'{source_rel_path} -> {target_rel_path}')
+        with self.refactor(target_path):
+            names = self.filter(filters)
+            for name in names:
+                self.del_spyce(name, content_only=content_only)
 
     def mix(self, output_file=None, filters=None):
         source_rel_path, source_path, target_rel_path, target_path = self.__paths(output_file)
@@ -197,7 +251,7 @@ class Wok(MutableSpycyFile):
                 if name not in self or name not in excluded_names:
                     LOG.info(f'file {self.filename}: setting spyce {name}')
                     spyce = flavor()
-                    self[name] = spyce
+                    self.set_spyce(name, spyce, empty=False)
             for discarded_name in set(self).difference(self.flavors):
                 del self[discarded_name]
 

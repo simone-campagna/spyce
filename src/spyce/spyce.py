@@ -314,10 +314,8 @@ class SpyceFilter:
 
 
 class SpycyFile(Mapping):
-    __re_section__ = r'\# spyce:\s+section\s+(?P<section>source|data)\s*'
     __re_spyce__ = r'\# spyce:\s+(?P<action>start|end)\s+(?P<name>[^\s\/\:]+)'
     __re_conf__ = r'\# spyce:\s+-\s+(?P<key>\w+)\s*=\s*(?P<value>.*)\s*$'
-    __sections__ = {'source', 'data'}
 
     def __init__(self, file=None, lines=None):
         if file is None:
@@ -335,7 +333,6 @@ class SpycyFile(Mapping):
         self.filename = str(self.path) if self.path is not None else '<stdin>'
         self.lines = lines
         self.spyce_jars = {}
-        self.section = {'source': None, 'data': None}
         self._parse_lines()
 
     def filter(self, spyce_filters):
@@ -357,7 +354,6 @@ class SpycyFile(Mapping):
         filename = self.filename
         lines = self.lines
         re_spyce = re.compile(self.__re_spyce__)
-        re_section = re.compile(self.__re_section__)
         re_conf = re.compile(self.__re_conf__)
         spyce_jars = self.spyce_jars
 
@@ -372,11 +368,6 @@ class SpycyFile(Mapping):
                 spyce_jar = None
 
         for cur_index, line in enumerate(lines):
-            m_section = re_section.match(line)
-            if m_section:
-                self.section[m_section['section']] = cur_index
-                continue
-
             m_spyce = re_spyce.match(line)
             if m_spyce:
                 cur_action, cur_name = (

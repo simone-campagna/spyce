@@ -40,19 +40,14 @@ class FlavorMeta(abc.ABCMeta):
 
 class Flavor(metaclass=FlavorMeta):
     __registry__ = {}
-    def __init__(self, name=None, spyce_type=None, section=None):
+    def __init__(self, name=None, spyce_type=None):
         self.name = name
         self.spyce_type = spyce_type
-        self.section = section
 
         self._check_name()
         self._check_spyce_type()
-        self._check_section()
 
     def _default_name(self):
-        return None
-
-    def _default_section(self):
         return None
 
     @classmethod
@@ -64,7 +59,7 @@ class Flavor(metaclass=FlavorMeta):
     @abc.abstractmethod
     def flavor(self):
         raise NotImplemented()
-    
+
     @classmethod
     def flavor_class(cls, flavor):
         return cls.__registry__[flavor]
@@ -111,10 +106,6 @@ class Flavor(metaclass=FlavorMeta):
         if self.name is None:
             raise FlavorError(f'{type(self).__name__}: spyce name not set')
 
-    def _check_section(self):
-        if self.section is None:
-            self.section = self._default_section()
-
     def _check_spyce_type(self):
         if self.spyce_type is None:
             self.spyce_type = self.default_spyce_type()
@@ -132,10 +123,10 @@ class Flavor(metaclass=FlavorMeta):
 
 
 class PathFlavor(Flavor):
-    def __init__(self, path, name=None, spyce_type=None, section=None):
+    def __init__(self, path, name=None, spyce_type=None):
         self.path = Path(path)
         self._check_path()
-        super().__init__(name=name, spyce_type=spyce_type, section=section)
+        super().__init__(name=name, spyce_type=spyce_type)
 
     def _default_name(self):
         return self.path.name
@@ -213,9 +204,9 @@ class DirFlavor(PathFlavor):
 
 
 class UrlFlavor(Flavor):
-    def __init__(self, url, name=None, spyce_type=None, section=None):
+    def __init__(self, url, name=None, spyce_type=None):
         self.url = url
-        super().__init__(name=name, spyce_type=spyce_type, section=section)
+        super().__init__(name=name, spyce_type=spyce_type)
         self._check_url()
 
     def _default_name(self):
@@ -251,9 +242,9 @@ class UrlFlavor(Flavor):
 
 
 class ApiFlavor(Flavor):
-    def __init__(self, implementation, name=None, spyce_type=None, section=None):
+    def __init__(self, implementation, name=None, spyce_type=None):
         self.implementation = implementation
-        super().__init__(name=name, spyce_type=spyce_type, section=section)
+        super().__init__(name=name, spyce_type=spyce_type)
         self._check_implementation()
 
     def _default_name(self):
