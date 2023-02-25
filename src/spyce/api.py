@@ -43,7 +43,7 @@ def _build_spyce_namespace(name, file):
     build_ns_function = new_module.body[0]
     build_ns_function.body = orig_module.body + build_ns_function.body
     return '''\
-## spyce api implementation: inline
+# === spyce api implementation: inline ===
 ''' + ast.unparse(new_module)
 
 
@@ -69,7 +69,7 @@ return spyce_namespace
         indented_lines.append(indent + line)
     indented_source = '\n'.join(indented_lines)
     return f'''\
-## spyce api implementation: simple
+# === spyce api implementation: simple ===
 def _build_spyce_namespace(name, file):
 {indented_source}
 
@@ -79,7 +79,8 @@ def _build_spyce_namespace(name, file):
 
 def _compress_source(source):
     b_source = bytes(source, 'utf-8')
-    data = str(base64.b85encode(gzip.compress(b_source)), 'utf-8')
+    ## set mtime to 0 to make gzip output reproducible
+    data = str(base64.b85encode(gzip.compress(b_source, mtime=0)), 'utf-8')
     data_lines = ['"""']
     slen = spyce.get_max_line_length()
     for idx in range(0, len(data), slen):
@@ -98,7 +99,7 @@ def get_tmpfile_api(name):
     source = spyce.get_spyce('spyce_api').get_content()
     uncompress_code = _compress_source(source)
     return f'''\
-## spyce api implementation: tmpfile
+# === spyce api implementation: tmpfile ===
 def _load_module_from_tmpfile(name, file):
     import tempfile, atexit, shutil, sys, importlib.util
     from pathlib import Path
@@ -124,7 +125,7 @@ def get_memory_api(name):
     source = spyce.get_spyce('spyce_api').get_content()
     uncompress_code = _compress_source(source)
     return f'''\
-## spyce api implementation: memory
+# === spyce api implementation: memory ===
 def _load_module_from_memory(name, file):
     import sys, importlib.abc, importlib.util
 

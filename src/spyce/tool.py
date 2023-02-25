@@ -15,10 +15,10 @@ from .log import (
     trace_errors,
 )
 from .spyce import (
+    get_max_line_length,
     set_max_line_length,
     SpyceFilter,
     SpycyFile,
-    DEFAULT_BACKUP_FORMAT,
 )
 from .flavor import (
     ApiFlavor,
@@ -28,7 +28,10 @@ from .flavor import (
     UrlFlavor,
 )
 from .version import get_version
-from .wok import load_wok, import_wok, default_wok_filename, find_wok_path
+from .wok import (
+    Wok,
+    DEFAULT_BACKUP_FORMAT,
+)
 from . import api
 
 
@@ -72,9 +75,9 @@ def add_filters_argument(parser, required=False):
         default=[],
         required=required,
         help="""\
-add spyce filter spyces; the format can contain 'name', '^section', ':type' and '%%flavor',
+add spyce filter spyces; the format can contain 'name', ':type' and '^flavor',
 where all components are optional. The name, section, type and flavor values are patterns,
-eventually preceded by ~ to reverse selection. For instance: '%%api', '^data wg*'""")
+eventually preceded by ~ to reverse selection. For instance: '^api', '^url *wg*'""")
 
 
 def add_name_argument(parser, required=False):
@@ -84,50 +87,14 @@ def add_name_argument(parser, required=False):
         help='spyce name')
 
 
-def fn_spyce_list(input_file, filters, show_lines=False, show_conf=False, show_header=True):
-    spycy_file = SpycyFile(input_file)
-    table = []
-    spyces = []
-    names = spycy_file.filter(filters)
-    for name in names:
-        spyce = spycy_file.get_spyce_jar(name)
-        num_chars = len(spyce.get_text())
-        flavor = spyce.flavor or ''
-        table.append((spyce.section, spyce.name, spyce.spyce_type, flavor, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
-        spyces.append(spyce)
-    if table:
-        if show_header:
-            names.insert(0, None)
-            table.insert(0, ['section', 'name', 'type', 'flavor', 'lines', 'size'])
-        mlen = [max(len(row[c]) for row in table) for c in range(len(table[0]))]
-        if show_header:
-            names.insert(1, None)
-            table.insert(1, ['-' * ml for ml in mlen])
-
-        fmt = ' '.join(f'{{:{ml}s}}' for ml in mlen)
-        for name, row in zip(names, table):
-            print(fmt.format(*row))
-            if name is not None:
-                spyce = spycy_file[name]
-                if show_conf:
-                    for line in yaml.dump(spyce.conf).split('\n'):
-                        print('  ' + line)
-                if show_lines:
-                    spyce_jar = spycy_file.get_spyce_jar(name)
-                    for ln, line in enumerate(spyce.get_lines()):
-                        line_no = ln + spyce_jar.start + 1
-                        print(f'  {line_no:<6d} {line.rstrip()}')
-
-
-
 class FlavorType:
     class FlavorBuilder:
         def __init__(self, flavor_class, value):
             self.flavor_class = flavor_class
             self.value = value
 
-        def __call__(self, section, name, spyce_type):
-            obj = self.flavor_class(self.value, section=section, name=name, spyce_type=spyce_type)
+        def __call__(self, name, spyce_type=None, section=None):
+            obj = self.flavor_class(self.value, name=name, section=section, spyce_type=spyce_type)
             return obj
 
         def __str__(self):
@@ -149,23 +116,30 @@ class FlavorType:
         return self.__registry__[key]
 
 
-def fn_spyce_add(input_file, output_file, flavor_builder, section, name, spyce_type, backup, backup_format, max_line_length):
+def fn_spyce_mix(input_file, output_file, backup, backup_format, max_line_length):
     if max_line_length is not None:
         set_max_line_length(max_line_length)
-    spycy_file = SpycyFile(input_file)
-    with spycy_file.refactor(output_file, backup=backup, backup_format=backup_format):
-        flavor =flavor_builder(
-            section=section,
-            name=name,
-            spyce_type=spyce_type)
-        spyce = flavor()
-        spycy_file[spyce.name] = spyce
+
+    wok = Wok(input_file)
+    wok.mix(output_file=output_file)
 
 
 def fn_spyce_extract(input_file, output_file, name):
     spycy_file = SpycyFile(input_file)
-    spyce = spycy_file[name]
+    spyce_jar = spycy_file[name]
+    spyce = spyce_jar.spyce
     spyce.write_file(output_file)
+
+
+def fn_spyce_add(input_file, output_file, flavor_builder, section, name, spyce_type, backup, backup_format, max_line_length, replace):
+    if max_line_length is not None:
+        set_max_line_length(max_line_length)
+    flavor = flavor_builder(
+        section=section,
+        name=name,
+        spyce_type=spyce_type)
+    wok = Wok(input_file)
+    wok.add_flavor(flavor, output_file=output_file, replace=replace)
 
 
 def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
@@ -176,29 +150,18 @@ def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
             del spycy_file[name]
 
 
-def _load_wok(input_file):
-    if input_file is None:
-        return load_wok()
-    if input_file.file_type == 'wok-file':
-        return load_wok(input_file.file_name)
-    elif input_file.file_type == 'spycy-file':
-        return import_wok(input_file.file_name)
-    else:
-        raise ValueError(input_file)
+def fn_spyce_status(input_file, filters=None, info_level=0):
+    wok = Wok(input_file)
+    wok.status(filters=filters, info_level=info_level)
 
 
-def fn_wok_status(input_file):
-    wok = _load_wok(input_file)
-    wok.status()
+def fn_spyce_diff(input_file, filters=None, binary=True, info_level=0):
+    wok = Wok(input_file)
+    wok.diff(filters=filters, info_level=info_level, binary=binary)
 
 
-def fn_wok_diff(input_file):
-    wok = _load_wok(input_file)
-    wok.diff()
-
-
-def fn_wok_list(input_file, show_header, show_lines, show_conf, filters):
-    wok = _load_wok(input_file)
+def fn_spyce_list(input_file, show_header, show_lines, show_conf, filters):
+    wok = Wok(input_file)
     wok.list_spyces(
         show_header=show_header,
         show_lines=show_lines,
@@ -206,11 +169,6 @@ def fn_wok_list(input_file, show_header, show_lines, show_conf, filters):
         filters=filters)
 
 
-def fn_wok_fry(input_file, filters):
-    wok = load_wok(input_file)
-    wok.fry(filters=filters)
-
-    
 def add_common_arguments(parser):
     parser.add_argument(
         '--trace',
@@ -279,63 +237,6 @@ class InputFileType:
         return InputFile(file_type=self.file_type, file_name=file_name)
 
 
-def build_wok_parser(subparsers=None):
-    parser = build_parser(
-        name='wok',  subparsers=subparsers,
-        description=f'''\
-wok {get_version()} - add spyces to your python project
-'''
-    )
-    parser.set_defaults(
-        function=fn_wok_status,
-    )
-    input_group = parser.add_argument_group('input')
-    input_mgrp = input_group.add_mutually_exclusive_group()
-    input_kwargs = {'dest': 'input_file', 'default': None}
-    input_mgrp.add_argument(
-        '-i', '--input-wok-file',
-        metavar='WOK_FILE',
-        type=InputFileType('wok-file'),
-        help='input wok file',
-        **input_kwargs)
-    input_mgrp.add_argument(
-        '-s', '--input-spycy-file',
-        metavar='SPYCY_FILE',
-        type=InputFileType('spycy-file'),
-        help='input spycy file',
-        **input_kwargs)
-
-    subparsers = parser.add_subparsers()
-
-    ### status:
-    status_parser = build_parser(
-        'status', subparsers=subparsers,
-        function=fn_wok_status,
-        description='show the project status')
-
-    ### diff:
-    diff_parser = build_parser(
-        'diff', subparsers=subparsers,
-        function=fn_wok_diff,
-        description='show diffs')
-
-    ### list:
-    list_parser = build_parser(
-        'list', subparsers=subparsers,
-        function=fn_wok_list,
-        description='list spyces in current project')
-    add_list_arguments(list_parser)
-    add_filters_argument(list_parser)
-
-    ### fry:
-    fry_parser = build_parser(
-        'fry', subparsers=subparsers,
-        function=fn_wok_fry,
-        description='apply the wok recipe')
-    add_filters_argument(fry_parser)
-    return parser
-
-
 def build_spyce_parser(subparsers=None):
     parser = build_parser(
         name='spyce',  subparsers=subparsers,
@@ -354,6 +255,29 @@ spyce {get_version()} - add spyces to python source files
     add_filters_argument(list_parser)
     add_list_arguments(list_parser)
 
+    ### mix
+    mix_parser = build_parser(
+        'mix', subparsers=subparsers,
+        function=fn_spyce_mix,
+        description='mix spyces in python source file')
+    add_input_argument(mix_parser)
+    add_output_argument(mix_parser)
+    add_backup_argument(mix_parser)
+    add_filters_argument(mix_parser)
+    mix_parser.add_argument(
+        '-m', '--max-line-length',
+        default=None,
+        help='set max data line length')
+
+    ### extract
+    extract_parser = build_parser(
+        'extract', subparsers=subparsers,
+        function=fn_spyce_extract,
+        description='extract a spyce object from python source file')
+    add_input_argument(extract_parser)
+    add_output_argument(extract_parser, optional=False)
+    add_name_argument(extract_parser)
+
     ### add
     add_parser = build_parser(
         'add', subparsers=subparsers,
@@ -364,19 +288,15 @@ spyce {get_version()} - add spyces to python source files
     add_backup_argument(add_parser)
 
     add_parser.add_argument(
-        '-s', '--section',
-        default=None,
-        help='spyce section')
-
-    add_parser.add_argument(
         '-n', '--name',
         default=None,
         help='spyce name')
 
     add_parser.add_argument(
         '-m', '--max-line-length',
+        metavar='LEN',
         default=None,
-        help='set max data line length')
+        help=f'set max data line length (default: {get_max_line_length()})')
 
     add_parser.add_argument(
         '-t', '--type',
@@ -384,6 +304,12 @@ spyce {get_version()} - add spyces to python source files
         choices=['text', 'bytes'],
         default=None,
         help="spyce type (default: 'text' for source spyces, else 'bytes')")
+
+    add_parser.add_argument(
+        '-s', '--section',
+        choices=['source', 'data'],
+        default=None,
+        help='spyce section')
 
     c_group = add_parser.add_argument_group('spyce')
     c_mgrp = add_parser.add_mutually_exclusive_group(required=True)
@@ -394,32 +320,36 @@ spyce {get_version()} - add spyces to python source files
         choices=[api_flavor(impl) for impl in api.get_api_implementations()],
         type=FlavorType(ApiFlavor),
         nargs='?', const=FlavorType(ApiFlavor)('memory'),
+        help='add spyce api (default implementation: "memory")',
         **c_kwargs)
     c_mgrp.add_argument(
         '-p', '--py-source',
+        metavar='PY_SOURCE',
         type=FlavorType(SourceFlavor),
+        help='add python source file',
         **c_kwargs)
     c_mgrp.add_argument(
         '-f', '--file',
+        metavar='FILE',
         type=FlavorType(FileFlavor),
+        help='add file',
         **c_kwargs)
     c_mgrp.add_argument(
         '-d', '--dir',
+        metavar='DIR',
         type=FlavorType(DirFlavor),
+        help='add directory',
         **c_kwargs)
     c_mgrp.add_argument(
         '-u', '--url',
+        metavar='URL',
         type=FlavorType(UrlFlavor),
+        help='add url',
         **c_kwargs)
-
-    ### extract
-    extract_parser = build_parser(
-        'extract', subparsers=subparsers,
-        function=fn_spyce_extract,
-        description='extract a spyce object from python source file')
-    add_input_argument(extract_parser)
-    add_output_argument(extract_parser, optional=False)
-    add_name_argument(extract_parser)
+    add_parser.add_argument(
+        '-r', '--replace',
+        action='store_true', default=False,
+        help='replace existing spyce with the same name')
 
     ### del
     del_parser = build_parser(
@@ -431,8 +361,26 @@ spyce {get_version()} - add spyces to python source files
     add_backup_argument(del_parser)
     add_filters_argument(del_parser, required=True)
 
-    ### wok
-    wok_parser = build_wok_parser(subparsers)
+    ### status:
+    status_parser = build_parser(
+        'status', subparsers=subparsers,
+        function=fn_spyce_status,
+        description='show the project status')
+    add_input_argument(status_parser)
+    add_filters_argument(status_parser)
+
+    ### diff:
+    diff_parser = build_parser(
+        'diff', subparsers=subparsers,
+        function=fn_spyce_diff,
+        description='show diffs')
+    add_input_argument(diff_parser)
+    add_filters_argument(diff_parser)
+    diff_parser.add_argument(
+        '-b', '--binary',
+        action='store_true', default=False,
+        help='show diff in encoded binary spyces')
+
     return parser
 
 

@@ -8,7 +8,7 @@ __all__ = [
 ]
 
 
-def diff_files(l_path, r_path, l_lines=None, r_lines=None, collapse_lines=None, collapse_format='... ({num} lines)', stream=False):
+def diff_files(l_path, r_path, l_lines=None, r_lines=None, collapse_lines=None, collapse_format='... ({num} lines)', stream=False, num_context_lines=0):
     if l_lines is None:
         with open(l_path, 'r') as l_file:
             l_lines = l_file.readlines()
@@ -22,7 +22,7 @@ def diff_files(l_path, r_path, l_lines=None, r_lines=None, collapse_lines=None, 
             print(colored(text, 'magenta'), file=stream)
             blk.clear()
 
-    for line in difflib.unified_diff(l_lines, r_lines, str(l_path), str(r_path)):
+    for line in difflib.unified_diff(l_lines, r_lines, str(l_path), str(r_path), n=num_context_lines):
         if collapse_lines is not None and collapse_lines(line):
             blk.append(line)
         else:
@@ -45,4 +45,3 @@ def format_diff_line(line):
     elif line.startswith('+'):
         line = colored(line, 'green')
     return line
-

@@ -4,6 +4,9 @@ import tempfile
 from pathlib import Path
 
 # spyce: section source
+# spyce: start spyce
+# spyce: - flavor="api"
+# spyce: - implementation="memory"
 
 def main():
     bsp = spyce.get_spyce('wget-1.9.1.tar.gz')
@@ -20,4 +23,8 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 # spyce: section data
+# spyce: start wget-1.9.1.tar.gz
+# spyce: - flavor="url"
+# spyce: - url="https://ftp.gnu.org/gnu/wget/wget-1.9.1.tar.gz"
