@@ -136,6 +136,7 @@ class Colors:
             'x': [],
             'b': ['bold'],
             'l': ['light'],
+            'i': ['italic'],
             'u': ['underline'],
         }
         for fg_color, bg_color, style in itertools.product(colors, colors, styles):
@@ -150,14 +151,17 @@ C = Colors()
 
 
 class Console:
-    INFO = 0
-    WARNING = 1
+    DEBUG = 0
+    INFO = 1
+    WARNING = 0
     ERROR = 2
     def __init__(self, stream=sys.stdout, info_level=0):
         self.stream = stream
         self.info_level = info_level
         fmt = '{:7s}'
         self._hdr = {
+            None: fmt.format(''),
+            self.DEBUG: colored(fmt.format('debug'), 'blue'),
             self.INFO: colored(fmt.format('info'), 'green'),
             self.WARNING: colored(fmt.format('warning'), 'yellow'),
             self.ERROR: colored(fmt.format('error'), 'red'),
@@ -166,15 +170,22 @@ class Console:
     def print(self, text):
         print(text, file=self.stream)
 
-    def info(self, text):
-        self.log(self.INFO, text)
+    def debug(self, text, **kwargs):
+        self.log(self.DEBUG, text, **kwargs)
 
-    def warning(self, text):
-        self.log(self.WARNING, text)
+    def info(self, text, **kwargs):
+        self.log(self.INFO, text, **kwargs)
 
-    def error(self, text):
-        self.log(self.ERROR, text)
+    def warning(self, text, **kwargs):
+        self.log(self.WARNING, text, **kwargs)
 
-    def log(self, level, text):
+    def error(self, text, **kwargs):
+        self.log(self.ERROR, text, **kwargs)
+
+    def log(self, level, text, *, continuation=False):
         if level >= self.info_level:
-            print(f'{self._hdr[level]} {text}', file=self.stream)
+            if continuation:
+                lv = None
+            else:
+                lv = level
+            print(f'{self._hdr[lv]} {text}', file=self.stream)

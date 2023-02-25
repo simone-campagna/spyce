@@ -195,7 +195,7 @@ class Wok(MutableSpycyFile):
             else:
                 console.info(f'{C.xxb(name)} {C.gxx("up-to-date")}')
 
-    def diff(self, stream=sys.stdout, info_level=0, filters=None):
+    def diff(self, stream=sys.stdout, info_level=0, filters=None, binary=False):
         console = Console(stream=stream, info_level=info_level)
         if not self.path.is_file():
             console.error(f'file {rel_path} is missing')
@@ -214,14 +214,17 @@ class Wok(MutableSpycyFile):
             e_lines = flavor_spyce.get_lines()
             if f_lines != e_lines:
                 console.error(f'{C.xxb(name)} {colored("out-of-date", "red")}')
-                all_f_lines = ['\n' for line in self.lines]
-                all_e_lines = all_f_lines[:]
-                all_f_lines[start:] = f_lines
-                all_e_lines[start:] = e_lines
-                diff_files(f'found', f'expected', all_f_lines, all_e_lines,
-                           stream=stream,
-                           num_context_lines=3,
-                )
+                if (not binary) and spyce_jar.spyce_type == 'bytes':
+                    console.error(C.xxi('(binary diff)'), continuation=True)
+                else:
+                    all_f_lines = ['\n' for line in self.lines]
+                    all_e_lines = all_f_lines[:]
+                    all_f_lines[start:] = f_lines
+                    all_e_lines[start:] = e_lines
+                    diff_files(f'found', f'expected', all_f_lines, all_e_lines,
+                               stream=stream,
+                               num_context_lines=3,
+                    )
             else:
                 console.info(f'{C.xxb(name)} {colored("up-to-date", "green")}')
 
@@ -259,57 +262,3 @@ class Wok(MutableSpycyFile):
                         for ln, line in enumerate(spyce.get_lines()):
                             line_no = ln + spyce_jar.start + 1
                             console.print(f'  {line_no:<6d} {line.rstrip()}')
-
-
-# REM class Wok(Mapping):
-# REM     def __init__(self, path, flavors):
-# REM         path = Path(path).absolute()
-# REM         base_dir = path.parent
-# REM         self.base_dir = base_dir
-# REM         self.path = path
-# REM         self.flavors = dict(flavors)
-# REM 
-# REM     def abs_path(self, path):
-# REM         path = Path(path)
-# REM         if not path.is_absolute():
-# REM             path = self.base_dir / path
-# REM         return path
-# REM 
-# REM     def rel_path(self, path):
-# REM         path = Path(path).absolute()
-# REM         if self.base_dir in path.parents:
-# REM             return path.relative_to(self.base_dir)
-# REM         return path
-# REM 
-# REM     @property
-# REM     def name(self):
-# REM         return str(self.rel_path(self.path))
-# REM 
-# REM     def __getitem__(self, name):
-# REM         return self.flavors[name]
-# REM 
-# REM     def __iter__(self):
-# REM         yield from self.flavors
-# REM 
-# REM     def __len__(self):
-# REM         return len(self.flavors)
-# REM 
-# REM     def __repr__(self):
-# REM         return f'{type(self).__name__}({self.path!r}, {self.source!r}, {self.flavors!r})'
-# REM 
-# REM     @classmet
-# REM     def import_spycy_file(cls, spycy_file):
-# REM         if not isinstance(spycy_file, SpycyFile):
-# REM             spycy_file = SpycyFile(spycy_file)
-# REM         path = spycy_file.path.absolute()
-# REM         base_dir = path.parent
-# REM         flavors = {}
-# REM         for spyce_name in spycy_file:
-# REM             spyce_jar = spycy_file[spyce_name]
-# REM             flavor_class = Flavor.flavor_class(spyce_jar.flavor)
-# REM             parsed_conf = flavor_class.parse_conf(base_dir, path, spyce_jar.conf)
-# REM             flavor = flavor_class(name=spyce_jar.name, **parsed_conf)
-# REM             flavors[flavor.name] = flavor
-# REM         return cls(
-# REM             path=path,
-# REM             flavors=flavors)

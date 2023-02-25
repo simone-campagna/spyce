@@ -86,42 +86,6 @@ def add_name_argument(parser, required=False):
         help='spyce name')
 
 
-# REM def fn_spyce_list(input_file, filters, show_lines=False, show_conf=False, show_header=True):
-# REM     spycy_file = SpycyFile(input_file)
-# REM     table = []
-# REM     spyces = []
-# REM     names = spycy_file.filter(filters)
-# REM     for name in names:
-# REM         spyce = spycy_file.get_spyce_jar(name)
-# REM         num_chars = len(spyce.get_text())
-# REM         flavor = spyce.flavor or ''
-# REM         table.append((spyce.name, spyce.spyce_type, flavor, f'{spyce.start+1}:{spyce.end+1}', str(num_chars)))
-# REM         spyces.append(spyce)
-# REM     if table:
-# REM         if show_header:
-# REM             names.insert(0, None)
-# REM             table.insert(0, ['name', 'type', 'flavor', 'lines', 'size'])
-# REM         mlen = [max(len(row[c]) for row in table) for c in range(len(table[0]))]
-# REM         if show_header:
-# REM             names.insert(1, None)
-# REM             table.insert(1, ['-' * ml for ml in mlen])
-# REM 
-# REM         fmt = ' '.join(f'{{:{ml}s}}' for ml in mlen)
-# REM         for name, row in zip(names, table):
-# REM             print(fmt.format(*row))
-# REM             if name is not None:
-# REM                 spyce = spycy_file[name]
-# REM                 if show_conf:
-# REM                     for line in yaml.dump(spyce.conf).split('\n'):
-# REM                         print('  ' + line)
-# REM                 if show_lines:
-# REM                     spyce_jar = spycy_file.get_spyce_jar(name)
-# REM                     for ln, line in enumerate(spyce.get_lines()):
-# REM                         line_no = ln + spyce_jar.start + 1
-# REM                         print(f'  {line_no:<6d} {line.rstrip()}')
-# REM 
-
-
 class FlavorType:
     class FlavorBuilder:
         def __init__(self, flavor_class, value):
@@ -179,9 +143,9 @@ def fn_spyce_status(input_file, filters=None, info_level=0):
     wok.status(filters=filters, info_level=info_level)
 
 
-def fn_spyce_diff(input_file, filters=None, info_level=0):
+def fn_spyce_diff(input_file, filters=None, binary=True, info_level=0):
     wok = Wok(input_file)
-    wok.diff(filters=filters, info_level=info_level)
+    wok.diff(filters=filters, info_level=info_level, binary=binary)
 
 
 def fn_spyce_list(input_file, show_header, show_lines, show_conf, filters):
@@ -327,6 +291,10 @@ spyce {get_version()} - add spyces to python source files
         description='show diffs')
     add_input_argument(diff_parser)
     add_filters_argument(diff_parser)
+    diff_parser.add_argument(
+        '-b', '--binary',
+        action='store_true', default=False,
+        help='show diff in encoded binary spyces')
 
     return parser
 
