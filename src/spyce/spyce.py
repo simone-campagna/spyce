@@ -325,7 +325,7 @@ class SpyceFilter:
 class SpycyFile(MutableMapping):
     __re_section__ = r'\# spyce:\s+section\s+(?P<section>source|data)\s*'
     __re_spyce__ = r'\# spyce:\s+(?P<action>start|end)\s+(?P<section>source|data)/(?P<name>[^\s\/\:]+)(?:\:(?P<type>\S+))?'
-    __re_conf__ = r'\# spyce:\s+conf:\s+(?P<key>\w+)\s*=\s*(?P<value>.*)\s*$'
+    __re_conf__ = r'\# spyce:\s+(?P<key>\w+)\s*=\s*(?P<value>.*)\s*$'
     __sections__ = {'source', 'data'}
 
     def __init__(self, file=None, lines=None):
@@ -428,7 +428,7 @@ class SpycyFile(MutableMapping):
             m_conf = re_conf.match(line)
             if m_conf:
                 if spyce_jar is None:
-                    raise SpyceError(f"{filename}@{cur_index + 1}: unexpected conf: {type(err).__name__}: {err}")
+                    raise SpyceError(f"{filename}@{cur_index + 1}: unexpected parameter {type(err).__name__}: {err}")
                 key = m_conf['key']
                 serialized_value = m_conf['value']
                 try:
@@ -493,7 +493,7 @@ class SpycyFile(MutableMapping):
         for key, value in spyce.conf.items():
             if key not in {'section', 'spyce_type'}:
                 serialized_value = json.dumps(value)
-                spyce_lines.append(f'# spyce: conf: {key}={serialized_value}\n')
+                spyce_lines.append(f'# spyce: {key}={serialized_value}\n')
         spyce_lines.extend(spyce.encode(content))
         spyce_lines.append(f'# spyce: end {fq_name}\n')
         self.lines[start:start] = spyce_lines
