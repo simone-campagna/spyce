@@ -1,92 +1,140 @@
-import itertools
 import functools
+import itertools
+import json
+import shutil
 import sys
 
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
 
-from .color import colored
+from .color import colored, Console, C
 from .flavor import Flavor, FlavorParseError
 from .log import LOG
-from .spyce import SpyceError, SpycyFile
+from .spyce import SpyceError, SpycyFile, Spyce, SpyceJar
 from .util import diff_files
 
 __all__ = [
-    'WokError',
+    'MutableSpycyFile',
     'Wok',
 ]
 
 
-class WokError(SpyceError):
-    pass
+DEFAULT_BACKUP_FORMAT = '{path}.bck.{timestamp}'
 
 
-def select_lines(classified_lines, selected_kinds):
-    kinds = set(selected_kinds)
-    result = []
-    for kind, line in classified_lines:
-        if kind in kinds:
-            result.append(line)
-    return result
+class MutableSpycyFile(MutableMapping, SpycyFile):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.content_version = 0
+
+    def _update_lines(self, l_start, l_diff):
+        for spyce_jar in self.spyce_jars.values():
+            if spyce_jar.start >= l_start:
+                spyce_jar.start += l_diff
+                spyce_jar.end += l_diff
+        for section in self.section:
+            if self.section[section] is not None and self.section[section] > l_start:
+                self.section[section] += l_diff
+
+    def __delitem__(self, name):
+        spyce_jar = self.spyce_jars.pop(name)
+        del self.lines[spyce_jar.start:spyce_jar.end]
+        self._update_lines(spyce_jar.start, -(spyce_jar.end - spyce_jar.start))
+        self.content_version += 1
+
+    def __setitem__(self, name, spyce):
+        if not isinstance(spyce, Spyce):
+            raise TypeError(spyce)
+        name = spyce.name
+        content = spyce.get_content()
+
+        self.content_version += 1
+        deleted_spyce_jar = self.spyce_jars.get(name, None)
+        if deleted_spyce_jar:
+            # replace existing block
+            del self[name]
+            start = deleted_spyce_jar.start
+        else:
+            spc_ends = [spc.end for spc in self.spyce_jars.values()]
+            if spc_ends:
+                # append to the existing section
+                start = max(spc_ends)
+            else:
+                # create the first spyce in the section
+                if self.section[section]:
+                    # use custom-specified section start
+                    start =  self.section[section] + 1
+                else:
+                    # use default section start
+                    if section == 'source':
+                        for l_index, line in enumerate(self.lines):
+                            if not line.startswith('#!'):
+                                break
+                        start = l_index
+                    else:
+                        start = len(self.lines)
+        spyce_lines = [f'# spyce: start {spyce.name}\n']
+        for key, value in spyce.conf.items():
+            if key not in {'section', 'spyce_type'}:
+                serialized_value = json.dumps(value)
+                spyce_lines.append(f'# spyce: - {key}={serialized_value}\n')
+        spyce_lines.extend(spyce.encode(content))
+        spyce_lines.append(f'# spyce: end {spyce.name}\n')
+        self.lines[start:start] = spyce_lines
+        l_diff = len(spyce_lines)
+        self._update_lines(start, l_diff)
+        spyce_jar = SpyceJar(self, name=name, start=start, end=start + len(spyce_lines), conf=spyce.conf)
+        self.spyce_jars[spyce_jar.name] = spyce_jar
+
+    @contextmanager
+    def refactor(self, output_path=None, backup=False, backup_format=DEFAULT_BACKUP_FORMAT):
+        if self.path is None:
+            raise SpyceError('{self}: path is not set')
+        content_version = self.content_version
+        yield
+        if output_path is None:
+            if content_version != self.content_version:
+                output_path = self.path
+            else:
+                output_path = None
+        else:
+            output_path = Path(output_path)
+        if output_path is self.path or not self.path.is_file():
+            backup = False
+            if backup and self.path.is_file():
+                if backup_format is None:
+                    backup_format = DEFAULT_BACKUP_FORMAT
+                backup_path = Path(str(backup_format).format(
+                    path=self.path,
+                    timestamp=Timestamp.now(),
+                ))
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(self.path, backup_path)
+        if output_path:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, 'w') as fh:
+                fh.writelines(self.lines)
+            if self.path.is_file():
+                shutil.copymode(self.path, output_path)
 
 
-def _cr(text):
-    return colored(text, 'red')
-
-
-def _cg(text):
-    return colored(text, 'green')
-
-
-def _cy(text):
-    return colored(text, 'yellow')
-
-
-def _h(text):
-    #return colored(text, styles=['underline']) + ':'
-    return colored(text, styles=['bold']) + ':'
-
-
-class Console:
-    INFO = 0
-    WARNING = 1
-    ERROR = 2
-    def __init__(self, stream=sys.stdout, info_level=0):
-        self.stream = stream
-        self.info_level = info_level
-        fmt = '{:7s}'
-        self._hdr = {
-            self.INFO: colored(fmt.format('info'), 'green'),
-            self.WARNING: colored(fmt.format('warning'), 'yellow'),
-            self.ERROR: colored(fmt.format('error'), 'red'),
-        }
-
-    def print(self, text):
-        print(text, file=self.stream)
-
-    def info(self, text):
-        self.log(self.INFO, text)
-
-    def warning(self, text):
-        self.log(self.WARNING, text)
-
-    def error(self, text):
-        self.log(self.ERROR, text)
-
-    def log(self, level, text):
-        if level >= self.info_level:
-            print(f'{self._hdr[level]} {text}', file=self.stream)
-
-
-class Wok(Mapping):
-    def __init__(self, path, flavors):
-        path = Path(path).absolute()
-        base_dir = path.parent
-        self.base_dir = base_dir
-        self.path = path
-        self.flavors = dict(flavors)
+class Wok(MutableSpycyFile):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.path is None:
+            self.base_dir = Path.cwd()
+        else:
+            self.base_dir = self.path.parent
+        self.flavors = {}
+        for spyce_name, spyce_jar in self.items():
+            flavor_class = Flavor.flavor_class(spyce_jar.flavor)
+            flavor_class.fix_conf(spyce_jar.conf)
+            parsed_conf = flavor_class.parse_conf(self.base_dir, self.path, spyce_jar.conf)
+            flavor = flavor_class(name=spyce_jar.name, **parsed_conf)
+            self.flavors[flavor.name] = flavor
 
     def abs_path(self, path):
         path = Path(path)
@@ -100,22 +148,6 @@ class Wok(Mapping):
             return path.relative_to(self.base_dir)
         return path
 
-    @property
-    def name(self):
-        return str(self.rel_path(self.path))
-
-    def __getitem__(self, name):
-        return self.flavors[name]
-
-    def __iter__(self):
-        yield from self.flavors
-
-    def __len__(self):
-        return len(self.flavors)
-
-    def __repr__(self):
-        return f'{type(self).__name__}({self.path!r}, {self.source!r}, {self.flavors!r})'
-
     def mix(self, target_path=None, filters=None):
         source_path = self.path
         source_rel_path = self.rel_path(source_path)
@@ -125,35 +157,32 @@ class Wok(Mapping):
             target_path = Path(target_path).absolute()
             target_rel_path = self.rel_path(target_path)
 
-        spycy_file = SpycyFile(source_path)
         LOG.info(f'{source_rel_path} -> {target_rel_path}')
-        with spycy_file.refactor(target_path):
+        with self.refactor(target_path):
             if filters:
-                included_names = spycy_file.filter(filters)
-                excluded_names = set(spycy_file).difference(included_names)
+                included_names = self.filter(filters)
+                excluded_names = set(self).difference(included_names)
                 # print(filters, included_names, excluded_names)
             else:
                 excluded_names = set()
             for flavor in self.flavors.values():
                 name = flavor.name
-                if name not in spycy_file or name not in excluded_names:
-                    LOG.info(f'file {spycy_file.filename}: setting spyce {name}')
+                if name not in self or name not in excluded_names:
+                    LOG.info(f'file {self.filename}: setting spyce {name}')
                     spyce = flavor()
-                    spycy_file[name] = spyce
-            for discarded_name in set(spycy_file).difference(self.flavors):
-                del spycy_file[discarded_name]
+                    self[name] = spyce
+            for discarded_name in set(self).difference(self.flavors):
+                del self[discarded_name]
 
     def status(self, stream=sys.stdout, info_level=0, filters=None):
         console = Console(stream=stream, info_level=info_level)
         if not self.path.is_file():
             console.error(f'file {self.path} is missing')
             return
-        spycy_file = SpycyFile(self.path)
-        names = spycy_file.filter(filters)
+        names = self.filter(filters)
         for name in names:
-            flavor = self[name]
-            spyce_jar = spycy_file[name]
-            self._fix_jar(spyce_jar)
+            flavor = self.flavors[name]
+            spyce_jar = self[name]
             try:
                 spyce = spyce_jar.spyce
             except Exception as err:
@@ -162,32 +191,30 @@ class Wok(Mapping):
             flavor_spyce = flavor()
             expected_lines = flavor_spyce.get_lines()
             if found_lines != expected_lines:
-                console.error(f'{_h(name)} {_cr("out-of-date")}')
+                console.error(f'{C.xxb(name)} {C.rxx("out-of-date")}')
             else:
-                console.info(f'{_h(name)} {_cg("up-to-date")}')
+                console.info(f'{C.xxb(name)} {C.gxx("up-to-date")}')
 
     def diff(self, stream=sys.stdout, info_level=0, filters=None):
         console = Console(stream=stream, info_level=info_level)
         if not self.path.is_file():
             console.error(f'file {rel_path} is missing')
             return
-        spycy_file = SpycyFile(self.path)
-        names = spycy_file.filter(filters)
+        names = self.filter(filters)
         for name in names:
-            flavor = self[name]
-            spyce_jar = spycy_file[name]
+            flavor = self.flavors[name]
+            spyce_jar = self[name]
             start, end = spyce_jar.index_range(headers=False)
-            self._fix_jar(spyce_jar)
             try:
                 spyce = spyce_jar.spyce
             except Exception as err:
-                console.error(f'{_h(name)} cannot be loaded: {type(err).__name__}: {err}')
+                console.error(f'{C.xxb(name)} cannot be loaded: {type(err).__name__}: {err}')
             f_lines = spyce.get_lines()
             flavor_spyce = flavor()
             e_lines = flavor_spyce.get_lines()
             if f_lines != e_lines:
-                console.error(f'{_h(name)} {colored("out-of-date", "red")}')
-                all_f_lines = ['\n' for line in spycy_file.lines]
+                console.error(f'{C.xxb(name)} {colored("out-of-date", "red")}')
+                all_f_lines = ['\n' for line in self.lines]
                 all_e_lines = all_f_lines[:]
                 all_f_lines[start:] = f_lines
                 all_e_lines[start:] = e_lines
@@ -196,28 +223,20 @@ class Wok(Mapping):
                            num_context_lines=3,
                 )
             else:
-                console.info(f'{_h(name)} {colored("up-to-date", "green")}')
+                console.info(f'{C.xxb(name)} {colored("up-to-date", "green")}')
 
-    def _fix_jar(self, spyce_jar):
-        flavor = spyce_jar.flavor or ''
-        if flavor:
-            flavor_class = Flavor.flavor_class(spyce_jar.flavor)
-            flavor_class.fix_conf(spyce_jar.conf)
-        
     def list_spyces(self, stream=sys.stdout, show_header=True, filters=None, show_lines=False, show_conf=False):
         console = Console(stream=stream)
         table = []
         data = {}
-        spycy_file = SpycyFile(self.path)
-        names = spycy_file.filter(filters)
+        names = self.filter(filters)
         for name in names:
-            spyce_jar = spycy_file[name]
+            spyce_jar = self[name]
             flavor = spyce_jar.flavor or ''
-            self._fix_jar(spyce_jar)
             num_chars = len(spyce_jar.get_text())
             table.append([spyce_jar.name, spyce_jar.spyce_type, flavor,
                           f'{spyce_jar.start+1}:{spyce_jar.end+1}', str(num_chars)])
-            data[name] = (spycy_file, spyce_jar)
+            data[name] = spyce_jar
         if table:
             if show_header:
                 names.insert(0, None)
@@ -232,29 +251,65 @@ class Wok(Mapping):
                 console.print(fmt.format(*row))
                 if name is not None:
                     if show_conf:
-                        spyce_file = data[name][0]
-                        spyce = spycy_file[name]
+                        spyce = self[name]
                         for line in yaml.dump(spyce.conf).split('\n'):
                             console.print('  ' + line)
                     if show_lines:
-                        spyce_jar = data[name][1]
+                        spyce_jar = data[name]
                         for ln, line in enumerate(spyce.get_lines()):
                             line_no = ln + spyce_jar.start + 1
                             console.print(f'  {line_no:<6d} {line.rstrip()}')
 
-    @classmethod
-    def import_spycy_file(cls, spycy_file):
-        if not isinstance(spycy_file, SpycyFile):
-            spycy_file = SpycyFile(spycy_file)
-        path = spycy_file.path.absolute()
-        base_dir = path.parent
-        flavors = {}
-        for spyce_name in spycy_file:
-            spyce_jar = spycy_file[spyce_name]
-            flavor_class = Flavor.flavor_class(spyce_jar.flavor)
-            parsed_conf = flavor_class.parse_conf(base_dir, path, spyce_jar.conf)
-            flavor = flavor_class(name=spyce_jar.name, **parsed_conf)
-            flavors[flavor.name] = flavor
-        return cls(
-            path=path,
-            flavors=flavors)
+
+# REM class Wok(Mapping):
+# REM     def __init__(self, path, flavors):
+# REM         path = Path(path).absolute()
+# REM         base_dir = path.parent
+# REM         self.base_dir = base_dir
+# REM         self.path = path
+# REM         self.flavors = dict(flavors)
+# REM 
+# REM     def abs_path(self, path):
+# REM         path = Path(path)
+# REM         if not path.is_absolute():
+# REM             path = self.base_dir / path
+# REM         return path
+# REM 
+# REM     def rel_path(self, path):
+# REM         path = Path(path).absolute()
+# REM         if self.base_dir in path.parents:
+# REM             return path.relative_to(self.base_dir)
+# REM         return path
+# REM 
+# REM     @property
+# REM     def name(self):
+# REM         return str(self.rel_path(self.path))
+# REM 
+# REM     def __getitem__(self, name):
+# REM         return self.flavors[name]
+# REM 
+# REM     def __iter__(self):
+# REM         yield from self.flavors
+# REM 
+# REM     def __len__(self):
+# REM         return len(self.flavors)
+# REM 
+# REM     def __repr__(self):
+# REM         return f'{type(self).__name__}({self.path!r}, {self.source!r}, {self.flavors!r})'
+# REM 
+# REM     @classmet
+# REM     def import_spycy_file(cls, spycy_file):
+# REM         if not isinstance(spycy_file, SpycyFile):
+# REM             spycy_file = SpycyFile(spycy_file)
+# REM         path = spycy_file.path.absolute()
+# REM         base_dir = path.parent
+# REM         flavors = {}
+# REM         for spyce_name in spycy_file:
+# REM             spyce_jar = spycy_file[spyce_name]
+# REM             flavor_class = Flavor.flavor_class(spyce_jar.flavor)
+# REM             parsed_conf = flavor_class.parse_conf(base_dir, path, spyce_jar.conf)
+# REM             flavor = flavor_class(name=spyce_jar.name, **parsed_conf)
+# REM             flavors[flavor.name] = flavor
+# REM         return cls(
+# REM             path=path,
+# REM             flavors=flavors)

@@ -1,3 +1,5 @@
+import functools
+import itertools
 import re
 import sys
 
@@ -6,7 +8,9 @@ __all__ = [
     'set_colored',
     'get_colored',
     'AnsiColor',
+    'C',
     'colored',
+    'Console',
 ]
 
 
@@ -107,4 +111,70 @@ class AnsiColor:
 ANSI_COLOR = AnsiColor()
 
 
+class Colors:
+    def __init__(self):
+        colors = {
+            'x': None,
+            'k': 'black',
+            'r': 'red',
+            'g': 'green',
+            'y': 'yellow',
+            'b': 'blue',
+            'm': 'magenta',
+            'c': 'cyan',
+            'w': 'white',
+            'K': 'bright-black',
+            'R': 'bright-red',
+            'G': 'bright-green',
+            'Y': 'bright-yellow',
+            'B': 'bright-blue',
+            'M': 'bright-magenta',
+            'C': 'bright-cyan',
+            'W': 'bright-white',
+        }
+        styles = {
+            'x': [],
+            'b': ['bold'],
+            'l': ['light'],
+            'u': ['underline'],
+        }
+        for fg_color, bg_color, style in itertools.product(colors, colors, styles):
+            name = ''.join([fg_color, bg_color, style])
+            function = functools.partial(colored, fg_color=colors[fg_color], bg_color=colors[bg_color], styles=styles[style])
+            setattr(self, name, function)
+
+
 colored = ANSI_COLOR.color
+
+C = Colors()
+
+
+class Console:
+    INFO = 0
+    WARNING = 1
+    ERROR = 2
+    def __init__(self, stream=sys.stdout, info_level=0):
+        self.stream = stream
+        self.info_level = info_level
+        fmt = '{:7s}'
+        self._hdr = {
+            self.INFO: colored(fmt.format('info'), 'green'),
+            self.WARNING: colored(fmt.format('warning'), 'yellow'),
+            self.ERROR: colored(fmt.format('error'), 'red'),
+        }
+
+    def print(self, text):
+        print(text, file=self.stream)
+
+    def info(self, text):
+        self.log(self.INFO, text)
+
+    def warning(self, text):
+        self.log(self.WARNING, text)
+
+    def error(self, text):
+        self.log(self.ERROR, text)
+
+    def log(self, level, text):
+        if level >= self.info_level:
+            print(f'{self._hdr[level]} {text}', file=self.stream)

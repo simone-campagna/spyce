@@ -9,13 +9,10 @@ import inspect
 import io
 import json
 import re
-import shutil
 import sys
 import tarfile
 
-from collections.abc import Mapping, MutableMapping
-from collections.abc import Sequence
-from contextlib import contextmanager
+from collections.abc import Mapping
 from pathlib import Path
 from operator import attrgetter
 
@@ -28,7 +25,6 @@ __all__ = [
 
 SPYCE_API_VERSION = '0.1.0'
 
-DEFAULT_BACKUP_FORMAT = '{path}.bck.{timestamp}'
 MAX_LINE_LENGTH = 120
 
 def get_max_line_length():
@@ -317,7 +313,7 @@ class SpyceFilter:
         return ' '.join(key_rev[key] + str(pattern) for key, pattern, _ in self.patterns)
 
 
-class SpycyFile(MutableMapping):
+class SpycyFile(Mapping):
     __re_section__ = r'\# spyce:\s+section\s+(?P<section>source|data)\s*'
     __re_spyce__ = r'\# spyce:\s+(?P<action>start|end)\s+(?P<name>[^\s\/\:]+)'
     __re_conf__ = r'\# spyce:\s+-\s+(?P<key>\w+)\s*=\s*(?P<value>.*)\s*$'
@@ -341,7 +337,6 @@ class SpycyFile(MutableMapping):
         self.spyce_jars = {}
         self.section = {'source': None, 'data': None}
         self._parse_lines()
-        self.content_version = 0
 
     def filter(self, spyce_filters):
         if spyce_filters is None:
@@ -416,96 +411,6 @@ class SpycyFile(MutableMapping):
 
         if spyce_jar:
             _store_spyce_jar(None)
-
-    def _update_lines(self, l_start, l_diff):
-        for spyce_jar in self.spyce_jars.values():
-            if spyce_jar.start >= l_start:
-                spyce_jar.start += l_diff
-                spyce_jar.end += l_diff
-        for section in self.section:
-            if self.section[section] is not None and self.section[section] > l_start:
-                self.section[section] += l_diff
-
-    def __delitem__(self, name):
-        spyce_jar = self.spyce_jars.pop(name)
-        del self.lines[spyce_jar.start:spyce_jar.end]
-        self._update_lines(spyce_jar.start, -(spyce_jar.end - spyce_jar.start))
-        self.content_version += 1
-
-    def __setitem__(self, name, spyce):
-        if not isinstance(spyce, Spyce):
-            raise TypeError(spyce)
-        name = spyce.name
-        content = spyce.get_content()
-
-        self.content_version += 1
-        deleted_spyce_jar = self.spyce_jars.get(name, None)
-        if deleted_spyce_jar:
-            # replace existing block
-            del self[name]
-            start = deleted_spyce_jar.start
-        else:
-            spc_ends = [spc.end for spc in self.spyce_jars.values()]
-            if spc_ends:
-                # append to the existing section
-                start = max(spc_ends)
-            else:
-                # create the first spyce in the section
-                if self.section[section]:
-                    # use custom-specified section start
-                    start =  self.section[section] + 1
-                else:
-                    # use default section start
-                    if section == 'source':
-                        for l_index, line in enumerate(self.lines):
-                            if not line.startswith('#!'):
-                                break
-                        start = l_index
-                    else:
-                        start = len(self.lines)
-        spyce_lines = [f'# spyce: start {spyce.name}\n']
-        for key, value in spyce.conf.items():
-            if key not in {'section', 'spyce_type'}:
-                serialized_value = json.dumps(value)
-                spyce_lines.append(f'# spyce: - {key}={serialized_value}\n')
-        spyce_lines.extend(spyce.encode(content))
-        spyce_lines.append(f'# spyce: end {spyce.name}\n')
-        self.lines[start:start] = spyce_lines
-        l_diff = len(spyce_lines)
-        self._update_lines(start, l_diff)
-        spyce_jar = SpyceJar(self, name=name, start=start, end=start + len(spyce_lines), conf=spyce.conf)
-        self.spyce_jars[spyce_jar.name] = spyce_jar
-
-    @contextmanager
-    def refactor(self, output_path=None, backup=False, backup_format=DEFAULT_BACKUP_FORMAT):
-        if self.path is None:
-            raise SpyceError('{self}: path is not set')
-        content_version = self.content_version
-        yield
-        if output_path is None:
-            if content_version != self.content_version:
-                output_path = self.path
-            else:
-                output_path = None
-        else:
-            output_path = Path(output_path)
-        if output_path is self.path or not self.path.is_file():
-            backup = False
-            if backup and self.path.is_file():
-                if backup_format is None:
-                    backup_format = DEFAULT_BACKUP_FORMAT
-                backup_path = Path(str(backup_format).format(
-                    path=self.path,
-                    timestamp=Timestamp.now(),
-                ))
-                backup_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(self.path, backup_path)
-        if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w') as fh:
-                fh.writelines(self.lines)
-            if self.path.is_file():
-                shutil.copymode(self.path, output_path)
 
     def __len__(self):
         return len(self.spyce_jars)

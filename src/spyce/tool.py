@@ -18,7 +18,6 @@ from .spyce import (
     set_max_line_length,
     SpyceFilter,
     SpycyFile,
-    DEFAULT_BACKUP_FORMAT,
 )
 from .flavor import (
     ApiFlavor,
@@ -28,7 +27,10 @@ from .flavor import (
     UrlFlavor,
 )
 from .version import get_version
-from .wok import Wok
+from .wok import (
+    Wok,
+    DEFAULT_BACKUP_FORMAT,
+)
 from . import api
 
 
@@ -153,7 +155,7 @@ def fn_spyce_mix(input_file, output_file, backup, backup_format, max_line_length
     if max_line_length is not None:
         set_max_line_length(max_line_length)
 
-    wok = Wok.import_spycy_file(input_file)
+    wok = Wok(input_file)
     wok.mix(target_path=output_file)
 
 
@@ -173,17 +175,17 @@ def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
 
 
 def fn_spyce_status(input_file, filters=None, info_level=0):
-    wok = Wok.import_spycy_file(input_file)
+    wok = Wok(input_file)
     wok.status(filters=filters, info_level=info_level)
 
 
 def fn_spyce_diff(input_file, filters=None, info_level=0):
-    wok = Wok.import_spycy_file(input_file)
+    wok = Wok(input_file)
     wok.diff(filters=filters, info_level=info_level)
 
 
 def fn_spyce_list(input_file, show_header, show_lines, show_conf, filters):
-    wok = Wok.import_spycy_file(input_file)
+    wok = Wok(input_file)
     wok.list_spyces(
         show_header=show_header,
         show_lines=show_lines,

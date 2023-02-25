@@ -45,4 +45,3 @@ def format_diff_line(line):
     elif line.startswith('+'):
         line = colored(line, 'green')
     return line
-
