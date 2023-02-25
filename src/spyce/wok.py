@@ -14,33 +14,9 @@ from .spyce import SpyceError, SpycyFile
 from .util import diff_files
 
 __all__ = [
-    'default_wok_filename',
-    'find_wok_path',
     'WokError',
-    'WokFile',
     'Wok',
-    'load_wok',
-    'import_wok',
 ]
-
-
-DEFAULT_WOK_FILENAME = '.wok-project.yaml'
-
-
-def default_wok_filename():
-    return DEFAULT_WOK_FILENAME
-
-
-def find_wok_path(base_dir=None):
-    if base_dir is None:
-        base_dir = Path.cwd()
-    while True:
-        wpath = base_dir / DEFAULT_WOK_FILENAME
-        if wpath.is_file():
-            return wpath
-        if base_dir.parent == base_dir:
-            return None
-        base_dir = base_dir.parent
 
 
 class WokError(SpyceError):
@@ -74,7 +50,7 @@ def select_lines(classified_lines, selected_kinds):
     return result
 
 
-class WokFile(WokMixin, Mapping):
+class Wok(WokMixin, Mapping):
     def __init__(self, base_dir, filename, target_path, source_path, flavors):
         super().__init__(base_dir, filename)
         self.target_path = self.abs_path(target_path)
@@ -113,7 +89,7 @@ class WokFile(WokMixin, Mapping):
             return self.target_rel_path, target_path
         return self.source_rel_path, source_path
 
-    def fry(self, filters=None):
+    def mix(self, filters=None):
         source_rel_path, source_path = self._use_source()
         target_rel_path, target_path = self.target_rel_path, self.target_path
         spycy_file = SpycyFile(source_path)
@@ -223,79 +199,31 @@ class WokFile(WokMixin, Mapping):
                    collapse_format=collapse_format,
                    stream=stream)
 
-    @classmethod
-    def import_spycy_file(cls, spycy_file):
-        if not isinstance(spycy_file, SpycyFile):
-            spycy_file = SpycyFile(spycy_file)
-        filename = spycy_file.path
-        base_dir = filename.parent
-        target_path = spycy_file.path
-        source_path = target_path
-        flavors = {}
-        for spyce in spycy_file.values():
-            flavor_class = Flavor.flavor_class(spyce.flavor)
-            parsed_conf = flavor_class.parse_conf(base_dir, filename, spyce.conf)
-            flavor = flavor_class(name=spyce.name, **parsed_conf)
-            flavors[flavor.name] = flavor
-        return cls(
-            base_dir=base_dir,
-            filename=filename,
-            target_path=target_path,
-            source_path=source_path,
-            flavors=flavors)
-
-
-class Wok(WokMixin, Mapping):
-    def __init__(self, base_dir, filename, wok_files):
-        super().__init__(base_dir, filename)
-        self.wok_files = dict(wok_files)
-
-    def __getitem__(self, file):
-        return self.wok_files[file]
-
-    def __iter__(self):
-        yield from self.wok_files
-
-    def __len__(self):
-        return len(self.wok_files)
-
-    def __repr__(self):
-        return f'{type(self).__name__}({self.wok_files!r})'
-
-    def fry(self, filters=None):
-        for wok_file in self.wok_files.values():
-            wok_file.fry(filters=filters)
-
-    def status(self, stream=sys.stdout):
-        for wok_file in self.wok_files.values():
-            wok_file.status(stream)
-
-    def diff(self, stream=sys.stdout):
-        for wok_file in self.wok_files.values():
-            wok_file.diff(stream)
-
+    def _fix_jar(self, spyce_jar):
+        flavor = spyce_jar.flavor or ''
+        if flavor:
+            flavor_class = Flavor.flavor_class(spyce_jar.flavor)
+            flavor_class.fix_conf(spyce_jar.conf)
+        
     def list_spyces(self, stream=sys.stdout, show_header=True, filters=None, show_lines=False, show_conf=False):
         def _print(text):
             print(text, file=stream)
         table = []
         data = {}
-        for wok_file in self.wok_files.values():
-            if not wok_file.target_path.is_file():
-                continue
-            spycy_file = SpycyFile(wok_file.target_path)
-            names = spycy_file.filter(filters)
-            for name in names:
-                spyce_jar = spycy_file.get_spyce_jar(name)
-                num_chars = len(spyce_jar.get_text())
-                flavor = spyce_jar.flavor or ''
-                table.append((spyce_jar.section, spyce_jar.name, spyce_jar.spyce_type, flavor,
-                              f'{spyce_jar.start+1}:{spyce_jar.end+1}', str(num_chars),
-                              str(wok_file.target_rel_path)))
-                data[name] = (spycy_file, spyce_jar)
+        spycy_file = SpycyFile(self.target_path)
+        names = spycy_file.filter(filters)
+        for name in names:
+            spyce_jar = spycy_file[name]
+            flavor = spyce_jar.flavor or ''
+            self._fix_jar(spyce_jar)
+            num_chars = len(spyce_jar.get_text())
+            table.append([spyce_jar.name, spyce_jar.spyce_type, flavor,
+                          f'{spyce_jar.start+1}:{spyce_jar.end+1}', str(num_chars)])
+            data[name] = (spycy_file, spyce_jar)
         if table:
             if show_header:
                 names.insert(0, None)
-                table.insert(0, ['section', 'name', 'type', 'flavor', 'lines', 'size', 'target'])
+                table.insert(0, ['name', 'type', 'flavor', 'lines', 'size'])
             mlen = [max(len(row[c]) for row in table) for c in range(len(table[0]))]
             if show_header:
                 names.insert(1, None)
@@ -317,113 +245,24 @@ class Wok(WokMixin, Mapping):
                             _print(f'  {line_no:<6d} {line.rstrip()}')
 
     @classmethod
-    def import_spycy_file(cls, spycy_file):
-        wok_file = WokFile.import_spycy_file(spycy_file)
+    def import_spycy_file(cls, spycy_file, target_path=None):
+        if not isinstance(spycy_file, SpycyFile):
+            spycy_file = SpycyFile(spycy_file)
+        filename = spycy_file.path
+        base_dir = filename.parent
+        source_path = spycy_file.path
+        if target_path is None:
+            target_path = source_path
+        flavors = {}
+        for spyce_name in spycy_file:
+            spyce_jar = spycy_file[spyce_name]
+            flavor_class = Flavor.flavor_class(spyce_jar.flavor)
+            parsed_conf = flavor_class.parse_conf(base_dir, filename, spyce_jar.conf)
+            flavor = flavor_class(name=spyce_jar.name, **parsed_conf)
+            flavors[flavor.name] = flavor
         return cls(
-            base_dir=wok_file.base_dir,
-            filename=wok_file.filename,
-            wok_files={wok_file.target_path: wok_file})
-
-
-def _build_err(filename, section, message):
-    msg = f'wok file {filename}'
-    if section:
-        msg += f', section {section}'
-    msg += f': {message}'
-    return WokError(msg)
-
-
-def parse_wok_file_spyce(base_dir, filename, file, name, data):
-    if not isinstance(data, Mapping):
-        raise _build_err(filename, f'wok.files.{file}.spyces.{name}', 'not a mapping')
-    defaults = {
-        'name': name,
-        'section': None,
-        'spyce_type': None,
-    }
-    def _add_key(key):
-        if key not in data:
-            raise _build_err(filename, f'wok.files.{file}.spyces.{name}', f'missing key {key}')
-        defaults[key] = data[key]
-    flavor = data.get('flavor', 'file')
-    try:
-        flavor_class = Flavor.flavor_class(flavor)
-    except KeyError:
-        raise _build_err(filename, f'wok.files.{file}.spyces.{name}', f'unknown flavor {flavor!r}')
-    try:
-        g_args = flavor_class.parse_conf(base_dir, filename, data)
-    except FlavorParseError as err:
-        raise _build_err(filename, f'wok.files.{file}.spyces.{name}', str(err))
-    defaults.update(g_args)
-    return flavor_class(**defaults)
-
-
-def parse_wok_file_spyces(base_dir, filename, file, data):
-    if not isinstance(data, Mapping):
-        raise _build_err(filename, f'wok.files.{file}.spyces', 'not a mapping')
-    spyces = {}
-    for name, entry in data.items():
-        spyces[name] = parse_wok_file_spyce(base_dir, filename, file, name, entry)
-    return spyces
-
-
-def parse_wok_file(base_dir, filename, target_path, data):
-    if not isinstance(data, Mapping):
-        raise _build_err(filename, f'wok.files.{target_path}', 'not a mapping')
-    source_path = data.get('source', target_path)
-    flavors = parse_wok_file_spyces(base_dir, filename, target_path, data.get('spyces', []))
-    return WokFile(base_dir, filename, target_path=target_path, source_path=source_path, flavors=flavors)
-
-
-def parse_wok_files(base_dir, filename, data):
-    if not isinstance(data, Mapping):
-        raise _build_err(filename, 'wok.files', 'not a mapping')
-    files = {}
-    for file, file_data in data.items():
-        file = Path(file)
-        if not file.is_absolute():
-            file = base_dir / file
-        wok_file = parse_wok_file(base_dir, filename, file, file_data)
-        files[wok_file.name] = wok_file
-    return files
-
-def parse_wok_section(base_dir, filename, data):
-    if not isinstance(data, Mapping):
-        raise _build_err(filename, 'wok', 'not a mapping')
-    files = parse_wok_files(base_dir, filename, data.get('files', {}))
-    return Wok(base_dir, filename, files)
-
-
-def import_wok(path):
-    return Wok.import_spycy_file(path)
-
-
-def load_wok(path=None):
-    if path is None:
-        path = find_wok_path()
-        if path is None:
-            raise WokError(f'cannot find a wok configuration file {DEFAULT_WOK_FILENAME!r}')
-    else:
-        path = Path(path).absolute()
-    if path.is_dir():
-        path = path / DEFAULT_WOK_FILENAME
-    if not path.exists():
-        raise WokError(f'wok file {path} does not exist')
-    if not path.is_file():
-        raise WokError(f'{path} is not a wok file')
-    base_dir = path.parent
-    try:
-        with open(path, 'r') as file:
-            data = yaml.safe_load(file)
-    except Exception as err:
-        raise WokError(f'wok file {path}: YAML parse error: {type(err).__name__}: {err}')
-    return parse_wok(base_dir, path, data)
-
-
-def parse_wok(base_dir, filename, data):
-    if not isinstance(data, Mapping):
-        raise _build_err(filename, None, 'not a mapping')
-    if 'wok' not in data:
-        raise _build_err(filename, None, 'missing wok section')
-    wok_section = data.get('wok')
-    return parse_wok_section(base_dir, filename, wok_section)
+            base_dir=base_dir,
+            filename=filename,
+            target_path=target_path,
+            source_path=source_path,
+            flavors=flavors)

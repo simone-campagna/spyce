@@ -15,7 +15,6 @@ setup(
     entry_points={
         'console_scripts': [
                 'spyce=spyce.tool:main_spyce',
-                'wok=spyce.tool:main_wok',
         ],
     },
     classifiers=[],
