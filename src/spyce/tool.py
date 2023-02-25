@@ -15,6 +15,7 @@ from .log import (
     trace_errors,
 )
 from .spyce import (
+    get_max_line_length,
     set_max_line_length,
     SpyceFilter,
     SpycyFile,
@@ -92,8 +93,8 @@ class FlavorType:
             self.flavor_class = flavor_class
             self.value = value
 
-        def __call__(self, section, name, spyce_type):
-            obj = self.flavor_class(self.value, section=section, name=name, spyce_type=spyce_type)
+        def __call__(self, name, spyce_type=None, section=None):
+            obj = self.flavor_class(self.value, name=name, section=section, spyce_type=spyce_type)
             return obj
 
         def __str__(self):
@@ -120,7 +121,7 @@ def fn_spyce_mix(input_file, output_file, backup, backup_format, max_line_length
         set_max_line_length(max_line_length)
 
     wok = Wok(input_file)
-    wok.mix(target_path=output_file)
+    wok.mix(output_file=output_file)
 
 
 def fn_spyce_extract(input_file, output_file, name):
@@ -128,6 +129,17 @@ def fn_spyce_extract(input_file, output_file, name):
     spyce_jar = spycy_file[name]
     spyce = spyce_jar.spyce
     spyce.write_file(output_file)
+
+
+def fn_spyce_add(input_file, output_file, flavor_builder, section, name, spyce_type, backup, backup_format, max_line_length, replace):
+    if max_line_length is not None:
+        set_max_line_length(max_line_length)
+    flavor = flavor_builder(
+        section=section,
+        name=name,
+        spyce_type=spyce_type)
+    wok = Wok(input_file)
+    wok.add_flavor(flavor, output_file=output_file, replace=replace)
 
 
 def fn_spyce_del(input_file, output_file, filters, backup, backup_format):
@@ -265,6 +277,79 @@ spyce {get_version()} - add spyces to python source files
     add_input_argument(extract_parser)
     add_output_argument(extract_parser, optional=False)
     add_name_argument(extract_parser)
+
+    ### add
+    add_parser = build_parser(
+        'add', subparsers=subparsers,
+        function=fn_spyce_add,
+        description='add or replace spyces in python source file')
+    add_input_argument(add_parser)
+    add_output_argument(add_parser)
+    add_backup_argument(add_parser)
+
+    add_parser.add_argument(
+        '-n', '--name',
+        default=None,
+        help='spyce name')
+
+    add_parser.add_argument(
+        '-m', '--max-line-length',
+        metavar='LEN',
+        default=None,
+        help=f'set max data line length (default: {get_max_line_length()})')
+
+    add_parser.add_argument(
+        '-t', '--type',
+        dest='spyce_type',
+        choices=['text', 'bytes'],
+        default=None,
+        help="spyce type (default: 'text' for source spyces, else 'bytes')")
+
+    add_parser.add_argument(
+        '-s', '--section',
+        choices=['source', 'data'],
+        default=None,
+        help='spyce section')
+
+    c_group = add_parser.add_argument_group('spyce')
+    c_mgrp = add_parser.add_mutually_exclusive_group(required=True)
+    c_kwargs = {'dest': 'flavor_builder'}
+    api_flavor = FlavorType(ApiFlavor)
+    c_mgrp.add_argument(
+        '-a', '--api',
+        choices=[api_flavor(impl) for impl in api.get_api_implementations()],
+        type=FlavorType(ApiFlavor),
+        nargs='?', const=FlavorType(ApiFlavor)('memory'),
+        help='add spyce api (default implementation: "memory")',
+        **c_kwargs)
+    c_mgrp.add_argument(
+        '-p', '--py-source',
+        metavar='PY_SOURCE',
+        type=FlavorType(SourceFlavor),
+        help='add python source file',
+        **c_kwargs)
+    c_mgrp.add_argument(
+        '-f', '--file',
+        metavar='FILE',
+        type=FlavorType(FileFlavor),
+        help='add file',
+        **c_kwargs)
+    c_mgrp.add_argument(
+        '-d', '--dir',
+        metavar='DIR',
+        type=FlavorType(DirFlavor),
+        help='add directory',
+        **c_kwargs)
+    c_mgrp.add_argument(
+        '-u', '--url',
+        metavar='URL',
+        type=FlavorType(UrlFlavor),
+        help='add url',
+        **c_kwargs)
+    add_parser.add_argument(
+        '-r', '--replace',
+        action='store_true', default=False,
+        help='replace existing spyce with the same name')
 
     ### del
     del_parser = build_parser(

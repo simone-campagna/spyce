@@ -2,6 +2,7 @@ import abc
 import inspect
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from .spyce import SpyceError, Spyce
 from . import api
@@ -39,12 +40,20 @@ class FlavorMeta(abc.ABCMeta):
 
 class Flavor(metaclass=FlavorMeta):
     __registry__ = {}
-    def __init__(self, name=None, spyce_type=None):
+    def __init__(self, name=None, spyce_type=None, section=None):
         self.name = name
         self.spyce_type = spyce_type
+        self.section = section
 
         self._check_name()
         self._check_spyce_type()
+        self._check_section()
+
+    def _default_name(self):
+        return None
+
+    def _default_section(self):
+        return None
 
     @classmethod
     def fix_conf(cls, conf):
@@ -98,7 +107,13 @@ class Flavor(metaclass=FlavorMeta):
 
     def _check_name(self):
         if self.name is None:
+            self.name = self._default_name()
+        if self.name is None:
             raise FlavorError(f'{type(self).__name__}: spyce name not set')
+
+    def _check_section(self):
+        if self.section is None:
+            self.section = self._default_section()
 
     def _check_spyce_type(self):
         if self.spyce_type is None:
@@ -117,10 +132,13 @@ class Flavor(metaclass=FlavorMeta):
 
 
 class PathFlavor(Flavor):
-    def __init__(self, path, name=None, spyce_type=None):
+    def __init__(self, path, name=None, spyce_type=None, section=None):
         self.path = Path(path)
         self._check_path()
-        super().__init__(name=name, spyce_type=spyce_type)
+        super().__init__(name=name, spyce_type=spyce_type, section=section)
+
+    def _default_name(self):
+        return self.path.name
 
     @classmethod
     def parse_conf(cls, base_dir, filename, data):
@@ -195,10 +213,13 @@ class DirFlavor(PathFlavor):
 
 
 class UrlFlavor(Flavor):
-    def __init__(self, url, name=None, spyce_type=None):
+    def __init__(self, url, name=None, spyce_type=None, section=None):
         self.url = url
-        super().__init__(name=name, spyce_type=spyce_type)
+        super().__init__(name=name, spyce_type=spyce_type, section=section)
         self._check_url()
+
+    def _default_name(self):
+        return Path(urlparse(self.url).path).name
 
     @classmethod
     def flavor(cls):
@@ -230,10 +251,13 @@ class UrlFlavor(Flavor):
 
 
 class ApiFlavor(Flavor):
-    def __init__(self, implementation, name=None, spyce_type=None):
+    def __init__(self, implementation, name=None, spyce_type=None, section=None):
         self.implementation = implementation
-        super().__init__(name=name, spyce_type=spyce_type)
+        super().__init__(name=name, spyce_type=spyce_type, section=section)
         self._check_implementation()
+
+    def _default_name(self):
+        return 'spyce'
 
     @classmethod
     def default_spyce_type(cls):

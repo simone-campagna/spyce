@@ -46,8 +46,36 @@ class MutableSpycyFile(MutableMapping, SpycyFile):
         self.content_version += 1
 
     def __setitem__(self, name, spyce):
+        self.add_spyce(name, spyce)
+
+    def add_spyce(self, name, spyce, section=None):
         if not isinstance(spyce, Spyce):
             raise TypeError(spyce)
+        if section is None:
+            section = 'data' if spyce.spyce_type == 'bytes' else 'source'
+
+        section_index = dict(self.section)
+        explicit_section = True
+        if section_index['source'] is None:
+            explicit_section = False
+            for l_index, line in enumerate(self.lines):
+                if not line.startswith('#!'):
+                    section_index['source'] = l_index
+                    break
+
+        if section_index['data'] is None:
+            explicit_section = False
+            section_index['data'] = len(self.lines)
+
+        sections = sorted(section_index.items(), key=lambda x: x[1])
+        cats = {}
+        for spyce_name, spyce_jar in self.items():
+            cat = None
+            for kind, index in sections:
+                if spyce_jar.start > index:
+                    cat = kind
+            cats.setdefault(cat, []).append(spyce_jar)
+
         name = spyce.name
         content = spyce.get_content()
 
@@ -58,24 +86,10 @@ class MutableSpycyFile(MutableMapping, SpycyFile):
             del self[name]
             start = deleted_spyce_jar.start
         else:
-            spc_ends = [spc.end for spc in self.spyce_jars.values()]
-            if spc_ends:
-                # append to the existing section
-                start = max(spc_ends)
+            if explicit_section and cats.get(section, None):
+                start = max(spc.end for spc in cats[section])
             else:
-                # create the first spyce in the section
-                if self.section[section]:
-                    # use custom-specified section start
-                    start =  self.section[section] + 1
-                else:
-                    # use default section start
-                    if section == 'source':
-                        for l_index, line in enumerate(self.lines):
-                            if not line.startswith('#!'):
-                                break
-                        start = l_index
-                    else:
-                        start = len(self.lines)
+                start = section_index[section]
         spyce_lines = [f'# spyce: start {spyce.name}\n']
         for key, value in spyce.conf.items():
             if key not in {'section', 'spyce_type'}:
@@ -148,14 +162,27 @@ class Wok(MutableSpycyFile):
             return path.relative_to(self.base_dir)
         return path
 
-    def mix(self, target_path=None, filters=None):
+    def __paths(self, output_file=None):
         source_path = self.path
         source_rel_path = self.rel_path(source_path)
-        if target_path is None:
+        if output_file is None:
             target_rel_path, target_path = source_rel_path, source_path
         else:
-            target_path = Path(target_path).absolute()
+            target_path = Path(output_file).absolute()
             target_rel_path = self.rel_path(target_path)
+        return source_rel_path, source_path, target_rel_path, target_path
+
+    def add_flavor(self, flavor, output_file=None, replace=False):
+        source_rel_path, source_path, target_rel_path, target_path = self.__paths(output_file)
+
+        LOG.info(f'{source_rel_path} -> {target_rel_path}')
+        if flavor.name in self and not replace:
+            raise SpyceError(f'cannot overwrite spyce {flavor.name}')
+        with self.refactor(target_path):
+            self.add_spyce(flavor.name, flavor(), section=flavor.section)
+
+    def mix(self, output_file=None, filters=None):
+        source_rel_path, source_path, target_rel_path, target_path = self.__paths(output_file)
 
         LOG.info(f'{source_rel_path} -> {target_rel_path}')
         with self.refactor(target_path):
