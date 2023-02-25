@@ -69,8 +69,8 @@ class Flavor(metaclass=FlavorMeta):
     def conf(self):
         return {
             'flavor': self.flavor(),
-            # 'section': self.section,
-            # 'type': self.spyce_type,
+            'section': self.section,
+            'type': self.spyce_type,
         }
 
     @classmethod
