@@ -23,9 +23,6 @@ __all__ = [
 ]
 
 
-DEFAULT_BACKUP_FORMAT = '{path}.bck.{timestamp}'
-
-
 class Position(abc.ABC):
     @abc.abstractmethod
     def __call__(self, spyce_file):
@@ -149,35 +146,27 @@ class MutableSpycyFile(MutableMapping, SpycyFile):
         self.spyce_jars[spyce_jar.name] = spyce_jar
 
     @contextmanager
-    def refactor(self, output_path=None, backup=False, backup_format=DEFAULT_BACKUP_FORMAT):
+    def refactor(self, output_path=None):
         if self.path is None:
             raise SpyceError('{self}: path is not set')
         content_version = self.content_version
         yield
         if output_path is None:
-            if content_version != self.content_version:
-                output_path = self.path
-            else:
-                output_path = None
+            output_path = self.path
         else:
             output_path = Path(output_path)
-        if output_path is self.path or not self.path.is_file():
-            backup = False
-            if backup and self.path.is_file():
-                if backup_format is None:
-                    backup_format = DEFAULT_BACKUP_FORMAT
-                backup_path = Path(str(backup_format).format(
-                    path=self.path,
-                    timestamp=Timestamp.now(),
-                ))
-                backup_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(self.path, backup_path)
-        if output_path:
+        in_place = False
+        if output_path.is_file() and output_path.resolve() == self.path.resolve():
+            in_place = True
+        write = True
+        if content_version == self.content_version and in_place:
+            write = False
+        if write:
+            st_mode = self.path.stat().st_mode
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with open(output_path, 'w') as fh:
                 fh.writelines(self.lines)
-            if self.path.is_file():
-                shutil.copymode(self.path, output_path)
+            output_path.chmod(st_mode)
 
 
 class Wok(MutableSpycyFile):
@@ -235,7 +224,8 @@ class Wok(MutableSpycyFile):
             for name in names:
                 self.del_spyce(name, content_only=content_only)
 
-    def mix(self, output_file=None, filters=None):
+    def update(self, output_file=None, filters=None, stream=sys.stdout, info_level=0):
+        console = Console(stream=stream, info_level=info_level)
         source_rel_path, source_path, target_rel_path, target_path = self.__paths(output_file)
 
         LOG.info(f'{source_rel_path} -> {target_rel_path}')
@@ -249,11 +239,27 @@ class Wok(MutableSpycyFile):
             for flavor in self.flavors.values():
                 name = flavor.name
                 if name not in self or name not in excluded_names:
-                    LOG.info(f'file {self.filename}: setting spyce {name}')
-                    spyce = flavor()
-                    self.set_spyce(name, spyce, empty=False)
+                    console.print(C.xxb(name), end=' ')
+                    try:
+                        e_spyce = flavor()
+                        if name in self:
+                            f_spyce = self[name].spyce
+                            if f_spyce.get_lines() == e_spyce.get_lines():
+                                console.print(C.cxx('skipped'))
+                                continue
+                        self.set_spyce(name, e_spyce, empty=False)
+                        console.print(C.gxx('added'))
+                    except:
+                        console.print(C.rxx('add failed!'))
+                        raise
             for discarded_name in set(self).difference(self.flavors):
-                del self[discarded_name]
+                console.print(C.xxb(name), end=' ')
+                try:
+                    del self[discarded_name]
+                    console.print(C.gxx('removed'))
+                except:
+                    console.print(C.rxx('remove failed!'))
+                    raise
 
     def status(self, stream=sys.stdout, info_level=0, filters=None):
         console = Console(stream=stream, info_level=info_level)

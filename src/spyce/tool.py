@@ -31,7 +31,6 @@ from .version import get_version
 from .wok import (
     Before, After, Begin, End,
     Wok,
-    DEFAULT_BACKUP_FORMAT,
 )
 from . import api
 
@@ -105,12 +104,12 @@ class FlavorType:
         return self.__registry__[key]
 
 
-def fn_spyce_mix(input_file, output_file, max_line_length):
+def fn_spyce_update(input_file, output_file, max_line_length, filters=None):
     if max_line_length is not None:
         set_max_line_length(max_line_length)
 
     wok = Wok(input_file)
-    wok.mix(output_file=output_file)
+    wok.update(output_file=output_file, filters=filters)
 
 
 def fn_spyce_extract(input_file, output_file, name):
@@ -256,15 +255,15 @@ spyce {get_version()} - add spyces to python source files
         help='show spyce lines',
         **target_kwargs)
 
-    ### mix
-    mix_parser = build_parser(
-        'mix', subparsers=subparsers,
-        function=fn_spyce_mix,
-        description='mix spyces in python source file')
-    add_input_argument(mix_parser)
-    add_output_argument(mix_parser)
-    add_filters_argument(mix_parser)
-    mix_parser.add_argument(
+    ### update
+    update_parser = build_parser(
+        'update', subparsers=subparsers,
+        function=fn_spyce_update,
+        description='update spyces in python source file')
+    add_input_argument(update_parser)
+    add_output_argument(update_parser)
+    add_filters_argument(update_parser)
+    update_parser.add_argument(
         '-m', '--max-line-length',
         default=None,
         help='set max data line length')

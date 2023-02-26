@@ -167,10 +167,12 @@ class Console:
             self.ERROR: colored(fmt.format('error'), 'red'),
         }
 
-    def print(self, text, *args, file=None, **kwargs):
+    def print(self, text, *args, file=None, flush=None, **kwargs):
         if file is None:
             file = self.stream
-        print(text, *args, file=self.stream, **kwargs)
+        if flush is None:
+            flush = True
+        print(text, *args, file=self.stream, flush=flush, **kwargs)
 
     def debug(self, text, **kwargs):
         self.log(self.DEBUG, text, **kwargs)
