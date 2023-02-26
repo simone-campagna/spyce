@@ -146,13 +146,22 @@ def fn_spyce_diff(input_file, filters=None, binary=True, info_level=0):
     wok.diff(filters=filters, info_level=info_level, binary=binary)
 
 
-def fn_spyce_list(input_file, show_header, show_lines, show_conf, filters):
+def fn_spyce_list(input_file, show_header, filters):
     wok = Wok(input_file)
     wok.list_spyces(
         show_header=show_header,
-        show_lines=show_lines,
-        show_conf=show_conf,
         filters=filters)
+
+
+def fn_spyce_show(input_file, show_target, filters):
+    wok = Wok(input_file)
+    if show_target == 'lines':
+        function = wok.show_spyce_lines
+    elif show_target == 'conf':
+        function = wok.show_spyce_conf
+    else:
+        return
+    function(filters=filters)
 
 
 def add_common_arguments(parser):
@@ -174,27 +183,6 @@ def add_common_arguments(parser):
         const=0,
         help='suppress warnings',
         **v_kwargs)
-
-
-def add_list_arguments(parser):
-    parser.add_argument(
-        '-c', '--conf',
-        dest='show_conf',
-        action='store_true',
-        default=False,
-        help='show spyce conf')
-    parser.add_argument(
-        '-l', '--lines',
-        dest='show_lines',
-        action='store_true',
-        default=False,
-        help='show spyce lines')
-    parser.add_argument(
-        '-H', '--no-header',
-        dest='show_header',
-        action='store_false',
-        default=True,
-        help='do not show table header lines')
 
 
 def build_parser(name, *, subparsers=None, function=None, **kwargs):
@@ -239,7 +227,34 @@ spyce {get_version()} - add spyces to python source files
         description='list spyces in python source file')
     add_input_argument(list_parser)
     add_filters_argument(list_parser)
-    add_list_arguments(list_parser)
+
+    list_parser.add_argument(
+        '-H', '--no-header',
+        dest='show_header',
+        action='store_false',
+        default=True,
+        help='do not show table header lines')
+
+    ### show
+    show_parser = build_parser(
+        'show', subparsers=subparsers,
+        function=fn_spyce_show,
+        description='show spyces in python source file')
+    add_input_argument(show_parser)
+    add_filters_argument(show_parser)
+
+    target_mgrp = show_parser.add_mutually_exclusive_group()
+    target_kwargs = {'dest': 'show_target', 'default': 'conf'}
+    target_mgrp.add_argument(
+        '-c', '--conf',
+        action='store_const', const='conf',
+        help='show spyce conf',
+        **target_kwargs)
+    target_mgrp.add_argument(
+        '-l', '--lines',
+        action='store_const', const='lines',
+        help='show spyce lines',
+        **target_kwargs)
 
     ### mix
     mix_parser = build_parser(

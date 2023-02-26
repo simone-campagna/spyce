@@ -309,10 +309,29 @@ class Wok(MutableSpycyFile):
             else:
                 console.info(f'{C.xxb(name)} {colored("up-to-date", "green")}')
 
-    def list_spyces(self, stream=sys.stdout, show_header=True, filters=None, show_lines=False, show_conf=False):
+    def show_spyce_conf(self, stream=sys.stdout, filters=None):
+        console = Console(stream=stream)
+        names = self.filter(filters)
+        for name in names:
+            console.print(f'{C.xxb(name)}')
+            spyce = self[name].spyce
+            for var_name, var_value in spyce.conf.items():
+                console.print(C.xxi(f'    {var_name}={json.dumps(var_value)}'))
+
+    def show_spyce_lines(self, stream=sys.stdout, filters=None):
+        console = Console(stream=stream)
+        names = self.filter(filters)
+        for name in names:
+            console.print(f'{C.xxb(name)} x')
+            spyce_jar = self[name]
+            spyce = spyce_jar.spyce
+            offset = spyce_jar.start
+            for index, line in enumerate(spyce.get_lines()):
+                console.print(f'    {index + offset:6d}| {C.xxi(line)}', end='')
+
+    def list_spyces(self, stream=sys.stdout, show_header=True, filters=None):
         console = Console(stream=stream)
         table = []
-        data = {}
         names = self.filter(filters)
         for name in names:
             spyce_jar = self[name]
@@ -320,7 +339,6 @@ class Wok(MutableSpycyFile):
             num_chars = len(spyce_jar.get_text())
             table.append([spyce_jar.name, spyce_jar.spyce_type, flavor,
                           f'{spyce_jar.start+1}:{spyce_jar.end+1}', str(num_chars)])
-            data[name] = spyce_jar
         if table:
             if show_header:
                 names.insert(0, None)
@@ -333,13 +351,3 @@ class Wok(MutableSpycyFile):
             fmt = ' '.join(f'{{:{ml}s}}' for ml in mlen)
             for name, row in zip(names, table):
                 console.print(fmt.format(*row))
-                if name is not None:
-                    if show_conf:
-                        spyce = self[name]
-                        for line in yaml.dump(spyce.conf).split('\n'):
-                            console.print('  ' + line)
-                    if show_lines:
-                        spyce_jar = data[name]
-                        for ln, line in enumerate(spyce.get_lines()):
-                            line_no = ln + spyce_jar.start + 1
-                            console.print(f'  {line_no:<6d} {line.rstrip()}')
