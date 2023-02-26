@@ -125,7 +125,7 @@ def get_memory_api(name):
     source = spyce.get_spyce('spyce_api').get_content()
     uncompress_code = _compress_source(source)
     return f'''\
-# === spyce api implementation: memory ===
+# === spyce api implementation: miemory ===
 def _load_module_from_memory(name, file):
     import sys, importlib.abc, importlib.util
 

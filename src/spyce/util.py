@@ -8,7 +8,7 @@ __all__ = [
 ]
 
 
-def diff_files(l_path, r_path, l_lines=None, r_lines=None, collapse_lines=None, collapse_format='... ({num} lines)', stream=False, num_context_lines=0):
+def diff_files(l_path, r_path, l_lines=None, r_lines=None, collapse_lines=None, collapse_format='... ({num} lines)', stream=False, num_context_lines=0, indent=''):
     if l_lines is None:
         with open(l_path, 'r') as l_file:
             l_lines = l_file.readlines()
@@ -27,7 +27,7 @@ def diff_files(l_path, r_path, l_lines=None, r_lines=None, collapse_lines=None, 
             blk.append(line)
         else:
             _show_collapsed()
-            print(format_diff_line(line), file=stream, end='')
+            print(indent + format_diff_line(line), file=stream, end='')
     _show_collapsed()
 
 

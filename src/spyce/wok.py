@@ -23,6 +23,11 @@ __all__ = [
 ]
 
 
+def h_name(text):
+    return text
+    # return C.xxi(text)
+
+
 class Position(abc.ABC):
     @abc.abstractmethod
     def __call__(self, spyce_file):
@@ -239,21 +244,21 @@ class Wok(MutableSpycyFile):
             for flavor in self.flavors.values():
                 name = flavor.name
                 if name not in self or name not in excluded_names:
-                    console.print(C.xxb(name), end=' ')
+                    console.print(h_name(name), end=' ')
                     try:
                         e_spyce = flavor()
                         if name in self:
                             f_spyce = self[name].spyce
                             if f_spyce.get_lines() == e_spyce.get_lines():
-                                console.print(C.cxx('skipped'))
+                                console.print(C.Cxb('skipped'))
                                 continue
                         self.set_spyce(name, e_spyce, empty=False)
-                        console.print(C.gxx('added'))
+                        console.print(C.Gxb('added'))
                     except:
-                        console.print(C.rxx('add failed!'))
+                        console.print(C.Rxb('add failed!'))
                         raise
             for discarded_name in set(self).difference(self.flavors):
-                console.print(C.xxb(name), end=' ')
+                console.print(h_name(name), end=' ')
                 try:
                     del self[discarded_name]
                     console.print(C.gxx('removed'))
@@ -270,17 +275,22 @@ class Wok(MutableSpycyFile):
         for name in names:
             flavor = self.flavors[name]
             spyce_jar = self[name]
+            console.print(h_name(name), end=' ')
             try:
-                spyce = spyce_jar.spyce
+                f_spyce = spyce_jar.spyce
+                f_lines = f_spyce.get_lines()
             except Exception as err:
-                console.error(f'{name} cannot be loaded: {type(err).__name__}: {err}')
-            found_lines = spyce.get_lines()
-            flavor_spyce = flavor()
-            expected_lines = flavor_spyce.get_lines()
-            if found_lines != expected_lines:
-                console.error(f'{C.xxb(name)} {C.rxx("out-of-date")}')
+                f_lines = []
+            try:
+                e_spyce = flavor()
+                e_lines = e_spyce.get_lines()
+            except Exception as err:
+                console.print(f'{C.Rxb("spyce load error")}: {type(err).__name__}: {err}')
+                continue
+            if f_lines != e_lines:
+                console.print(f'{C.Rxb("out-of-date")}')
             else:
-                console.info(f'{C.xxb(name)} {C.gxx("up-to-date")}')
+                console.print(f'{C.Gxb("up-to-date")}')
 
     def diff(self, stream=sys.stdout, info_level=0, filters=None, binary=False):
         console = Console(stream=stream, info_level=info_level)
@@ -292,34 +302,40 @@ class Wok(MutableSpycyFile):
             flavor = self.flavors[name]
             spyce_jar = self[name]
             start, end = spyce_jar.index_range(headers=False)
+            console.print(h_name(name), end=' ')
             try:
-                spyce = spyce_jar.spyce
+                f_spyce = spyce_jar.spyce
+                f_lines = f_spyce.get_lines()
             except Exception as err:
-                console.error(f'{C.xxb(name)} cannot be loaded: {type(err).__name__}: {err}')
-            f_lines = spyce.get_lines()
-            flavor_spyce = flavor()
-            e_lines = flavor_spyce.get_lines()
+                f_lines = []
+            try:
+                e_spyce = flavor()
+                e_lines = e_spyce.get_lines()
+            except Exception as err:
+                console.print(f'{C.Rxb("spyce load error")}: {type(err).__name__}: {err}')
+                continue
             if f_lines != e_lines:
-                console.error(f'{C.xxb(name)} {colored("out-of-date", "red")}')
+                console.print(f'{C.Rxb("out-of-date")}')
                 if (not binary) and spyce_jar.spyce_type == 'bytes':
-                    console.error(C.xxi('(binary diff)'), continuation=True)
+                    console.print(C.Rxb('(binary diff)'))
                 else:
-                    all_f_lines = ['\n' for line in self.lines]
-                    all_e_lines = all_f_lines[:]
+                    all_f_lines = list(self.lines)
+                    all_e_lines = list(self.lines)
                     all_f_lines[start:] = f_lines
                     all_e_lines[start:] = e_lines
                     diff_files(f'found', f'expected', all_f_lines, all_e_lines,
                                stream=stream,
                                num_context_lines=3,
+                               # indent='    ',
                     )
             else:
-                console.info(f'{C.xxb(name)} {colored("up-to-date", "green")}')
+                console.print(f'{C.Gxb("up-to-date")}')
 
     def show_spyce_conf(self, stream=sys.stdout, filters=None):
         console = Console(stream=stream)
         names = self.filter(filters)
         for name in names:
-            console.print(f'{C.xxb(name)}')
+            console.print(f'{h_name(name)}')
             spyce = self[name].spyce
             for var_name, var_value in spyce.conf.items():
                 console.print(C.xxi(f'    {var_name}={json.dumps(var_value)}'))
@@ -328,7 +344,7 @@ class Wok(MutableSpycyFile):
         console = Console(stream=stream)
         names = self.filter(filters)
         for name in names:
-            console.print(f'{C.xxb(name)} x')
+            console.print(f'{h_name(name)} x')
             spyce_jar = self[name]
             spyce = spyce_jar.spyce
             offset = spyce_jar.start
@@ -352,7 +368,7 @@ class Wok(MutableSpycyFile):
             mlen = [max(len(row[c]) for row in table) for c in range(len(table[0]))]
             if show_header:
                 names.insert(1, None)
-                table.insert(1, ['-' * ml for ml in mlen])
+                table.insert(1, ['─' * ml for ml in mlen])
 
             fmt = ' '.join(f'{{:{ml}s}}' for ml in mlen)
             for name, row in zip(names, table):
