@@ -139,6 +139,7 @@ class MutableSpycyFile(MutableMapping, SpycyFile):
         start = position(self)
         spyce_lines = [f'# spyce: start {name}\n']
         for key, value in spyce.conf.items():
+            print([key, value])
             serialized_value = json.dumps(value)
             spyce_lines.append(f'# spyce: - {key}={serialized_value}\n')
         if content_lines is not None:
@@ -181,13 +182,24 @@ class Wok(MutableSpycyFile):
             self.base_dir = Path.cwd()
         else:
             self.base_dir = self.path.parent
-        self.flavors = {}
-        for spyce_name, spyce_jar in self.items():
+        self.__cached_flavors = {}
+        for name, jar in self.items():
+            try:
+                flavor = self.get_flavor(name)
+            except:
+                LOG.exception(f'{name}: cannot obtain flavor')
+                flavor = None
+            if flavor is not None:
+                flavor.fix_conf(jar.conf)
+
+    def get_flavor(self, name):
+        if name not in self.__cached_flavors:
+            spyce_jar = self[name]
             flavor_class = Flavor.flavor_class(spyce_jar.flavor)
-            flavor_class.fix_conf(spyce_jar.conf)
             parsed_conf = flavor_class.parse_conf(self.base_dir, self.path, spyce_jar.conf)
             flavor = flavor_class(name=spyce_jar.name, **parsed_conf)
-            self.flavors[flavor.name] = flavor
+            self.__cached_flavors[name] = flavor
+        return self.__cached_flavors[name]
 
     def abs_path(self, path):
         path = Path(path)
@@ -241,14 +253,15 @@ class Wok(MutableSpycyFile):
                 # print(filters, included_names, excluded_names)
             else:
                 excluded_names = set()
-            for flavor in self.flavors.values():
-                name = flavor.name
+            for name, spyce_jar in list(self.items()):
+                flavor = self.get_flavor(name)
+                flavor.fix_conf(spyce_jar.conf)
                 if name not in self or name not in excluded_names:
                     console.print(h_name(name), end=' ')
                     try:
                         e_spyce = flavor()
                         if name in self:
-                            f_spyce = self[name].spyce
+                            f_spyce = spyce_jar.spyce
                             if f_spyce.get_lines() == e_spyce.get_lines():
                                 console.print(C.Cxb('skipped'))
                                 continue
@@ -257,7 +270,7 @@ class Wok(MutableSpycyFile):
                     except:
                         console.print(C.Rxb('add failed!'))
                         raise
-            for discarded_name in set(self).difference(self.flavors):
+            for discarded_name in set(self).difference(self):  # FIXME - useless
                 console.print(h_name(name), end=' ')
                 try:
                     del self[discarded_name]
@@ -273,8 +286,9 @@ class Wok(MutableSpycyFile):
             return
         names = self.filter(filters)
         for name in names:
-            flavor = self.flavors[name]
+            flavor = self.get_flavor(name)
             spyce_jar = self[name]
+            flavor.fix_conf(spyce_jar.conf)
             console.print(h_name(name), end=' ')
             try:
                 f_spyce = spyce_jar.spyce
@@ -299,8 +313,9 @@ class Wok(MutableSpycyFile):
             return
         names = self.filter(filters)
         for name in names:
-            flavor = self.flavors[name]
+            flavor = self.get_flavor(name)
             spyce_jar = self[name]
+            flavor.fix_conf(spyce_jar.conf)
             start, end = spyce_jar.index_range(headers=False)
             console.print(h_name(name), end=' ')
             try:
@@ -336,8 +351,8 @@ class Wok(MutableSpycyFile):
         names = self.filter(filters)
         for name in names:
             console.print(f'{h_name(name)}')
-            spyce = self[name].spyce
-            for var_name, var_value in spyce.conf.items():
+            spyce_jar = self[name]
+            for var_name, var_value in spyce_jar.conf.items():
                 console.print(C.xxi(f'    {var_name}={json.dumps(var_value)}'))
 
     def show_spyce_lines(self, stream=sys.stdout, filters=None):

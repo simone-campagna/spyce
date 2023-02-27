@@ -184,6 +184,10 @@ class SourceFlavor(FileFlavor):
 
 
 class DirFlavor(PathFlavor):
+    def __init__(self, path, arcname=None, name=None, spyce_type=None):
+        super().__init__(path, name=name, spyce_type=spyce_type)
+        self.arcname = arcname
+
     @classmethod
     def flavor(cls):
         return 'dir'
@@ -192,15 +196,27 @@ class DirFlavor(PathFlavor):
         path = self.path
         if not path.is_dir():
             raise FlavorError(f'{type(self).__name__}: {path} is not a directory')
-        super()._check_name()
+        super()._check_path()
 
     def content(self):
         import io
         import tarfile
         bf = io.BytesIO()
         with tarfile.open(fileobj=bf, mode='w|gz') as tf:
-            tf.add(self.path)
+            tf.add(self.path, arcname=self.arcname)
         return bf.getvalue()
+
+    @classmethod
+    def parse_conf(cls, base_dir, filename, data):
+        result = super().parse_conf(base_dir, filename, data)
+        arcname = data.get('arcname', None)
+        result['arcname'] = arcname
+        return result
+        
+    def conf(self):
+        result = super().conf()
+        result['arcname'] = self.arcname
+        return result
 
 
 class UrlFlavor(Flavor):
