@@ -139,7 +139,6 @@ class MutableSpycyFile(MutableMapping, SpycyFile):
         start = position(self)
         spyce_lines = [f'# spyce: start {name}\n']
         for key, value in spyce.conf.items():
-            print([key, value])
             serialized_value = json.dumps(value)
             spyce_lines.append(f'# spyce: - {key}={serialized_value}\n')
         if content_lines is not None:
@@ -182,23 +181,36 @@ class Wok(MutableSpycyFile):
             self.base_dir = Path.cwd()
         else:
             self.base_dir = self.path.parent
-        self.__cached_flavors = {}
-        for name, jar in self.items():
-            try:
-                flavor = self.get_flavor(name)
-            except:
-                LOG.exception(f'{name}: cannot obtain flavor')
-                flavor = None
-            if flavor is not None:
-                flavor.fix_conf(jar.conf)
+        self.__cached_flavors = None
+        # self.__parse_flavors()
+
+    def __parse_flavors(self):
+        if self.__cached_flavors is None:
+            console = Console()
+            errors = 0
+            self.__cached_flavors = {}
+            for name, jar in self.items():
+                flavor_name = jar.flavor
+                if flavor_name is None:
+                    console.error(f'spyce {C.xxb(name)}: flavor not set')
+                    errors += 1
+                    continue
+                try:
+                    flavor_class = Flavor.flavor_class(jar.flavor)
+                    parsed_conf = flavor_class.parse_conf(self.base_dir, self.path, jar.conf)
+                    flavor = flavor_class(name=jar.name, **parsed_conf)
+                    self.__cached_flavors[name] = flavor
+                except Exception as err:
+                    console.error(f'spyce {C.xxb(name)}: cannot create flavor {C.xxb(jar.flavor)}: {C.rxb(type(err).__name__)}: {C.rxx(str(err))}')
+                    errors += 1
+                    continue
+                if flavor is not None:
+                    flavor.fix_conf(jar.conf)
 
     def get_flavor(self, name):
+        self.__parse_flavors()
         if name not in self.__cached_flavors:
-            spyce_jar = self[name]
-            flavor_class = Flavor.flavor_class(spyce_jar.flavor)
-            parsed_conf = flavor_class.parse_conf(self.base_dir, self.path, spyce_jar.conf)
-            flavor = flavor_class(name=spyce_jar.name, **parsed_conf)
-            self.__cached_flavors[name] = flavor
+            raise SpyceError(f'spyce {name}: flavor not available')
         return self.__cached_flavors[name]
 
     def abs_path(self, path):
@@ -374,7 +386,7 @@ class Wok(MutableSpycyFile):
             spyce_jar = self[name]
             flavor = spyce_jar.flavor or ''
             num_chars = len(spyce_jar.get_text())
-            table.append([spyce_jar.name, spyce_jar.spyce_type, flavor,
+            table.append([spyce_jar.name, spyce_jar.spyce_type or '', flavor or '',
                           f'{spyce_jar.start+1}:{spyce_jar.end+1}', str(num_chars)])
         if table:
             if show_header:
