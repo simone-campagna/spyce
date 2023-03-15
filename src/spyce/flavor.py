@@ -62,6 +62,8 @@ class Flavor(metaclass=FlavorMeta):
 
     @classmethod
     def flavor_class(cls, flavor):
+        if flavor not in cls.__registry__:
+            raise SpyceError(f'unknown flavor {flavor}')
         return cls.__registry__[flavor]
 
     @classmethod
@@ -199,12 +201,13 @@ class DirFlavor(PathFlavor):
         super()._check_path()
 
     def content(self):
+        import gzip
         import io
         import tarfile
         bf = io.BytesIO()
-        with tarfile.open(fileobj=bf, mode='w|gz') as tf:
+        with tarfile.open(fileobj=bf, mode='w') as tf:
             tf.add(self.path, arcname=self.arcname)
-        return bf.getvalue()
+        return gzip.compress(bf.getvalue(), mtime=0.0)  # make compressed data reproducible!
 
     @classmethod
     def parse_conf(cls, base_dir, filename, data):
