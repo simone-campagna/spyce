@@ -77,7 +77,7 @@ class Spyce(metaclass=SpyceMeta):
         return self.conf.get('flavor', None)
 
     @classmethod
-    def spyce_class(cls, spyce_type, /, default=UNDEF):
+    def spyce_class(cls, spyce_type, default=UNDEF):
         if default is UNDEF:
             return cls.__registry__[spyce_type]
         else:
