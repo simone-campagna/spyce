@@ -1,2 +1,3 @@
 <new-version>
+* new api: is_defined, is_set, get
 * replace setup.py with pyproject.toml
