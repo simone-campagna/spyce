@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 import tempfile
 from pathlib import Path
 
@@ -9,7 +10,14 @@ from pathlib import Path
 # spyce: - implementation="memory"
 
 def main():
-    bsp = spyce.get_spyce('wget-1.9.1.tar.gz')
+    name = 'wget-1.9.1.tar.gz'
+    if not spyce.is_defined(name):
+        print(f'spyce {name!r} not defined')
+        sys.exit(1)
+    if not spyce.is_set(name):
+        print(f'spyce {name!r} defined but not set')
+        sys.exit(2)
+    bsp = spyce.get('wget-1.9.1.tar.gz')
     with tempfile.TemporaryDirectory() as tmpd:
         out_path = Path(tmpd) / bsp.name
         print(f'saving file {out_path}')
