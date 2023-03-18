@@ -18,7 +18,8 @@ from operator import attrgetter
 
 
 __all__ = [
-    'get_spyce', 'get_max_line_length', 'set_max_line_length',
+    'get_spycy_file', 'is_defined', 'is_set', 'get',
+    'get_max_line_length', 'set_max_line_length',
     'Pattern', 'SpyceFilter', 'Spyce', 'TextSpyce', 'BytesSpyce',
     'SpyceJar', 'SpycyFile',
 ]
@@ -43,6 +44,14 @@ class Timestamp(datetime.datetime):
 
 class SpyceError(RuntimeError):
     pass
+
+
+class UndefinedSpyceError(SpyceError):
+    "spyce not defined"
+
+
+class AbstractSpyceError(SpyceError):
+    "spyce not set"
 
 
 class SpyceMeta(abc.ABCMeta):
@@ -207,12 +216,18 @@ class SpyceJar:
             raise SpyceError(f"{self.spycy_file.filename}@{self.start + 1}: unknown spyce type {spyce_type!r}")
         return spyce_class
 
+    def is_set(self):
+        return bool(self.get_lines())
+
     @property
     def spyce(self):
         if self._spyce is None:
+            init = self.get_lines()
+            if not init:
+                raise AbstractSpyceError(f"{self.spycy_file.filename}@{self.start + 1}: spyce not set")
             self._spyce = self.spyce_class(
                 name=self.name,
-                init=self.get_lines(), conf=self.conf,
+                init=init, conf=self.conf,
                 path=self.spycy_file.path)
         return self._spyce
 
@@ -410,19 +425,55 @@ class SpycyFile(Mapping):
         yield from self.spyce_jars
 
     def __getitem__(self, name):
+        if name not in self.spyce_jars:
+            raise UndefinedSpyceError(f"{self.filename}: undefined spyce {name!r}")
         return self.spyce_jars[name]
 
-    def get_spyce(self, name):
+    def is_defined(self, name):
+        return name in self.spyce_jars
+
+    def is_set(self, name):
+        return self.spyce_jars[name].is_set()
+
+    def get(self, name):
         return self.spyce_jars[name].spyce
 
     def __repr__(self):
         return f'{type(self).__name__}({self.filename!r})'
 
 
-def get_spyce(name, file=None):
-    spycy_file = SpycyFile(file)
+SPYCY_FILE_CACHE = {}
+def get_spycy_file(file=None):
+    """get SpycyFile instance (cached)"""
+    if file is None:
+        file = __file__
+    file = Path(file).resolve()
+    spycy_file = SPYCY_FILE_CACHE.get(file, None)
+    if spycy_file is None:
+        spycy_file = SpycyFile(file)
+        SPYCY_FILE_CACHE[file] = spycy_file
+    return spycy_file
+
+
+def is_defined(name, file=None):
+    """return True if spyce *name* is defined, eventually not set"""
+    spycy_file = get_spycy_file(file)
+    return spycy_file.is_defined(name)
+
+
+def is_set(name, file=None):
+    """return True if spyce *name* is defined and set"""
+    spycy_file = get_spycy_file(file)
     if name not in spycy_file:
         raise SpyceError(f'spyce {name} not found')
-    return spycy_file.get_spyce(name)
+    return spycy_file.is_set(name)
+
+
+def get(name, file=None):
+    """get the spyce named *name*"""
+    spycy_file = get_spycy_file(file)
+    if name not in spycy_file:
+        raise SpyceError(f'spyce {name} not found')
+    return spycy_file.get(name)
 
 # spyce: end spyce_api

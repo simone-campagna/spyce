@@ -274,10 +274,11 @@ class Wok(MutableSpycyFile):
                     try:
                         e_spyce = flavor()
                         if name in self:
-                            f_spyce = spyce_jar.spyce
-                            if f_spyce.get_lines() == e_spyce.get_lines():
-                                console.print(C.Cxb('skipped'))
-                                continue
+                            if spyce_jar.is_set():
+                                f_spyce = spyce_jar.spyce
+                                if f_spyce.get_lines() == e_spyce.get_lines():
+                                    console.print(C.Cxb('skipped'))
+                                    continue
                         self.set_spyce(name, e_spyce, empty=False)
                         console.print(C.Gxb('added'))
                     except:
@@ -303,6 +304,9 @@ class Wok(MutableSpycyFile):
             spyce_jar = self[name]
             flavor.fix_conf(spyce_jar.conf)
             console.print(h_name(name), end=' ')
+            if not spyce_jar.is_set():
+                console.print(f'{C.Yxb("not-set")}')
+                continue
             try:
                 f_spyce = spyce_jar.spyce
                 f_lines = f_spyce.get_lines()
@@ -331,10 +335,13 @@ class Wok(MutableSpycyFile):
             flavor.fix_conf(spyce_jar.conf)
             start, end = spyce_jar.index_range(headers=False)
             console.print(h_name(name), end=' ')
-            try:
-                f_spyce = spyce_jar.spyce
-                f_lines = f_spyce.get_lines()
-            except Exception as err:
+            if spyce_jar.is_set():
+                try:
+                    f_spyce = spyce_jar.spyce
+                    f_lines = f_spyce.get_lines()
+                except Exception as err:
+                    f_lines = []
+            else:
                 f_lines = []
             try:
                 e_spyce = flavor()
