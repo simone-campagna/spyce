@@ -433,7 +433,7 @@ class SpycyFile(Mapping):
         return name in self.spyce_jars
 
     def is_set(self, name):
-        return self.spyce_jars[name].is_set()
+        return self.is_defined(name) and self.spyce_jars[name].is_set()
 
     def get(self, name):
         return self.spyce_jars[name].spyce
@@ -464,8 +464,6 @@ def is_defined(name, file=None):
 def is_set(name, file=None):
     """return True if spyce *name* is defined and set"""
     spycy_file = get_spycy_file(file)
-    if name not in spycy_file:
-        raise SpyceError(f'spyce {name} not found')
     return spycy_file.is_set(name)
 
 
