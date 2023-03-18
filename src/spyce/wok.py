@@ -2,6 +2,7 @@ import abc
 import functools
 import itertools
 import json
+import os
 import shutil
 import sys
 
@@ -180,7 +181,7 @@ class Wok(MutableSpycyFile):
         if self.path is None:
             self.base_dir = Path.cwd()
         else:
-            self.base_dir = self.path.parent
+            self.base_dir = Path(os.path.normpath(str(self.path.parent.absolute())))
         self.__cached_flavors = None
         # self.__parse_flavors()
 

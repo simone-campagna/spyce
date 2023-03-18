@@ -1,5 +1,6 @@
 import abc
 import inspect
+import os
 
 from pathlib import Path
 from urllib.parse import urlparse
@@ -125,8 +126,13 @@ class Flavor(metaclass=FlavorMeta):
 
 
 class PathFlavor(Flavor):
-    def __init__(self, path, name=None, spyce_type=None):
-        self.path = Path(path)
+    def __init__(self, base_dir, path, name=None, spyce_type=None):
+        self._orig_path = path
+        self.base_dir = Path(base_dir)
+        path = Path(path)
+        if not path.is_absolute():
+            path = base_dir / path
+        self.path = Path(os.path.normpath(str(path)))
         self._check_path()
         super().__init__(name=name, spyce_type=spyce_type)
 
@@ -136,16 +142,14 @@ class PathFlavor(Flavor):
     @classmethod
     def parse_conf(cls, base_dir, filename, data):
         result = super().parse_conf(base_dir, filename, data)
+        result['base_dir'] = base_dir
         path = cls._parse_key(data, 'path', (str, Path))
-        path = Path(path)
-        if not path.is_absolute():
-            path = Path(base_dir) / path
         result['path'] = path
         return result
 
     def conf(self):
         result = super().conf()
-        result['path'] = str(self.path)
+        result['path'] = str(self._orig_path)
         return result
 
     def _check_path(self):
@@ -186,8 +190,8 @@ class SourceFlavor(FileFlavor):
 
 
 class DirFlavor(PathFlavor):
-    def __init__(self, path, arcname=None, name=None, spyce_type=None):
-        super().__init__(path, name=name, spyce_type=spyce_type)
+    def __init__(self, base_dir, path, arcname=None, name=None, spyce_type=None):
+        super().__init__(base_dir, path, name=name, spyce_type=spyce_type)
         self.arcname = arcname
 
     @classmethod
