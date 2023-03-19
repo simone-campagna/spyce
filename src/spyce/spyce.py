@@ -335,13 +335,18 @@ class SpycyFile(Mapping):
     def __init__(self, file=None, lines=None):
         if file is None:
             file = get_file()
-        if lines is None:
-            if isinstance(file, (str, Path)):
-                path = Path(file)
-                with open(file, 'r') as fh:
-                    lines = fh.readlines()
-            else:
-                path = getattr(file, 'name', None)
+            path = None
+        if isinstance(file, (str, Path)):
+            path = Path(file)
+            if lines is None:
+                if isinstance(file, (str, Path)):
+                    with open(file, 'r') as fh:
+                        lines = fh.readlines()
+        else:
+            path = getattr(file, 'name', None)
+            if path:
+                path = Path(path)
+            if lines is None:
                 lines = file.readlines()
         self.file = file
         self.path = path
