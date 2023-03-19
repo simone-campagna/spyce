@@ -176,7 +176,10 @@ class Wok(MutableSpycyFile):
     def relocate(self, output_path):
         lines = self.lines[:]
         out_base_dir = output_path.parent
-        for name, jar in self.items():
+        jar_items = sorted(self.items(), key=lambda x: x[1].start)
+        offset = 0
+        for name, jar in jar_items:
+            content_lines = jar.get_lines(headers=False)
             # reparse jar conf:
             flavor = self.get_flavor(name)
             conf = flavor.parse_conf(self.base_dir, output_path, jar.conf)
@@ -186,12 +189,13 @@ class Wok(MutableSpycyFile):
             r_flavor = type(flavor)(name=name, **conf)
             conf = r_flavor.conf()
             # rewrite spyce lines:
-            spyce_lines = self.get_spyce_lines(name=name, conf=conf, content_lines=jar.get_lines())
-            lines[jar.start:jar.end] = spyce_lines
+            spyce_lines = self.get_spyce_lines(name=name, conf=conf, content_lines=content_lines)
+            lines[offset + jar.start:offset + jar.end] = spyce_lines
+            offset += len(spyce_lines) - (jar.end - jar.start)
         return Wok(output_path, lines=lines)
 
     @contextmanager
-    def refactor(self, output_path=None, force_rewrite=False):
+    def refactor(self, output_path=None, force_rewrite=False, mode=None):
         if self.path is None:
             raise SpyceError('{self}: path is not set')
         content_version = self.content_version
@@ -200,24 +204,29 @@ class Wok(MutableSpycyFile):
             output_path = self.path
         else:
             output_path = Path(output_path)
-        in_place = False
-        if output_path.is_file() and output_path.resolve() == self.path.resolve():
-            in_place = True
+        if output_path.resolve() != self.path.resolve():
+            # out ot place, spycy file must be relocated!
+            spycy_file = self.relocate(output_path)
+            if mode is None:
+                if self.path.is_file():
+                    mode = self.path.stat().st_mode
+                else:
+                    mode = None
+            with spycy_file.refactor(force_rewrite=True, mode=mode):
+                pass
+            return
+
         write = True
-        if (not force_rewrite) and content_version == self.content_version and in_place:
+        if (not force_rewrite) and content_version == self.content_version:
             write = False
         if write:
-            if in_place:
-                st_mode = self.path.stat().st_mode
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(output_path, 'w') as fh:
-                    fh.writelines(self.lines)
-                output_path.chmod(st_mode)
-            else:
-                spycy_file = self.relocate(output_path)
-                with spycy_file.refactor(force_rewrite=True):
-                    pass
-                return
+            if mode is None and self.path.is_file():
+                mode = self.path.stat().st_mode
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, 'w') as fh:
+                fh.writelines(self.lines)
+            if mode is not None:
+                output_path.chmod(mode)
 
     def __parse_flavors(self):
         if self.__cached_flavors is None:

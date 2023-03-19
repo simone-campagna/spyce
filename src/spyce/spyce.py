@@ -196,7 +196,7 @@ class SpyceJar:
         self.end = end
         self._spyce = None
         self.conf = dict(conf or {})
-        self.num_params = 0
+        self.num_params = len(self.conf)
 
     def index_range(self, headers=False):
         if headers:
