@@ -138,21 +138,60 @@ class MutableSpycyFile(MutableMapping, SpycyFile):
                 else:
                     position = End()
         start = position(self)
-        spyce_lines = [f'# spyce: start {name}\n']
-        for key, value in spyce.conf.items():
-            serialized_value = json.dumps(value)
-            spyce_lines.append(f'# spyce: - {key}={serialized_value}\n')
-        if content_lines is not None:
-            spyce_lines.extend(content_lines)
-        spyce_lines.append(f'# spyce: end {spyce.name}\n')
+        spyce_lines = self.get_spyce_lines(name=name, conf=spyce.conf, content_lines=content_lines)
+        # spyce_lines = [f'# spyce: start {name}\n']
+        # for key, value in spyce.conf.items():
+        #     serialized_value = json.dumps(value)
+        #     spyce_lines.append(f'# spyce: - {key}={serialized_value}\n')
+        # if content_lines is not None:
+        #     spyce_lines.extend(content_lines)
+        # spyce_lines.append(f'# spyce: end {spyce.name}\n')
         self.lines[start:start] = spyce_lines
         l_diff = len(spyce_lines)
         self._update_lines(start, l_diff)
         spyce_jar = SpyceJar(self, name=name, start=start, end=start + len(spyce_lines), conf=spyce.conf)
         self.spyce_jars[spyce_jar.name] = spyce_jar
 
+    def get_spyce_lines(self, name, conf, content_lines):
+        spyce_lines = [f'# spyce: start {name}\n']
+        for key, value in conf.items():
+            serialized_value = json.dumps(value)
+            spyce_lines.append(f'# spyce: - {key}={serialized_value}\n')
+        if content_lines is not None:
+            spyce_lines.extend(content_lines)
+        spyce_lines.append(f'# spyce: end {name}\n')
+        return spyce_lines
+
+
+class Wok(MutableSpycyFile):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.path is None:
+            self.base_dir = Path.cwd()
+        else:
+            self.base_dir = Path(os.path.normpath(str(self.path.parent.absolute())))
+        self.__cached_flavors = None
+        # self.__parse_flavors()
+
+    def relocate(self, output_path):
+        lines = self.lines[:]
+        out_base_dir = output_path.parent
+        for name, jar in self.items():
+            # reparse jar conf:
+            flavor = self.get_flavor(name)
+            conf = flavor.parse_conf(self.base_dir, output_path, jar.conf)
+            # relocate parsed conf:
+            conf = flavor.relocate_conf(out_base_dir, output_path, conf)
+            # create new flavor's conf:
+            r_flavor = type(flavor)(name=name, **conf)
+            conf = r_flavor.conf()
+            # rewrite spyce lines:
+            spyce_lines = self.get_spyce_lines(name=name, conf=conf, content_lines=jar.get_lines())
+            lines[jar.start:jar.end] = spyce_lines
+        return Wok(output_path, lines=lines)
+
     @contextmanager
-    def refactor(self, output_path=None):
+    def refactor(self, output_path=None, force_rewrite=False):
         if self.path is None:
             raise SpyceError('{self}: path is not set')
         content_version = self.content_version
@@ -165,25 +204,20 @@ class MutableSpycyFile(MutableMapping, SpycyFile):
         if output_path.is_file() and output_path.resolve() == self.path.resolve():
             in_place = True
         write = True
-        if content_version == self.content_version and in_place:
+        if (not force_rewrite) and content_version == self.content_version and in_place:
             write = False
         if write:
-            st_mode = self.path.stat().st_mode
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w') as fh:
-                fh.writelines(self.lines)
-            output_path.chmod(st_mode)
-
-
-class Wok(MutableSpycyFile):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.path is None:
-            self.base_dir = Path.cwd()
-        else:
-            self.base_dir = Path(os.path.normpath(str(self.path.parent.absolute())))
-        self.__cached_flavors = None
-        # self.__parse_flavors()
+            if in_place:
+                st_mode = self.path.stat().st_mode
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_path, 'w') as fh:
+                    fh.writelines(self.lines)
+                output_path.chmod(st_mode)
+            else:
+                spycy_file = self.relocate(output_path)
+                with spycy_file.refactor(force_rewrite=True):
+                    pass
+                return
 
     def __parse_flavors(self):
         if self.__cached_flavors is None:

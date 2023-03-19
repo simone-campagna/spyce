@@ -74,6 +74,10 @@ class Flavor(metaclass=FlavorMeta):
             result['spyce_type'] = data['type']
         return result
 
+    @classmethod
+    def relocate_conf(cls, base_dir, filename, conf):
+        return conf.copy()
+
     def conf(self):
         return {
             'flavor': self.flavor(),
@@ -146,6 +150,19 @@ class PathFlavor(Flavor):
         path = cls._parse_key(data, 'path', (str, Path))
         result['path'] = path
         return result
+
+    @classmethod
+    def relocate_conf(cls, base_dir, filename, conf):
+        conf = conf.copy()
+        path = conf['path']
+        if path:
+            path = Path(path)
+            if not path.is_absolute():
+                path = conf['base_dir'] / path
+                rel_path = os.path.relpath(path, base_dir)
+                conf['path'] = rel_path
+        conf['base_dir'] = base_dir
+        return conf
 
     def conf(self):
         result = super().conf()
