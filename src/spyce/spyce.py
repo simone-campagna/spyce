@@ -18,7 +18,7 @@ from operator import attrgetter
 
 
 __all__ = [
-    'get_spycy_file', 'is_defined', 'is_set', 'get',
+    'get_spycy_file', 'is_defined', 'is_set', 'get', 'get_jar',
     'get_max_line_length', 'set_max_line_length',
     'Pattern', 'SpyceFilter', 'Spyce', 'TextSpyce', 'BytesSpyce',
     'SpyceJar', 'SpycyFile',
@@ -478,5 +478,14 @@ def get(name, file=None):
     if name not in spycy_file:
         raise SpyceError(f'spyce {name} not found')
     return spycy_file.get(name)
+
+
+def get_jar(name, file=None):
+    """get the spyce named *name*"""
+    spycy_file = get_spycy_file(file)
+    if name not in spycy_file:
+        raise SpyceError(f'spyce {name} not found')
+    return spycy_file[name]
+
 
 # spyce: end spyce_api
