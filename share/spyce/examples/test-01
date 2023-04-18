@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+
+import sys
+import tempfile
+from pathlib import Path
+
+# spyce: section source
+# spyce: start spyce
+# spyce: - flavor="api"
+# spyce: - implementation="memory"
+
+def main():
+    name = 'wget-1.9.1.tar.gz'
+    if not spyce.is_defined(name):
+        print(f'spyce {name!r} not defined')
+        sys.exit(1)
+    if not spyce.is_set(name):
+        print(f'spyce {name!r} defined but not set')
+        sys.exit(2)
+    bsp = spyce.get('wget-1.9.1.tar.gz')
+    with tempfile.TemporaryDirectory() as tmpd:
+        out_path = Path(tmpd) / bsp.name
+        print(f'saving file {out_path}')
+        bsp.write_file(out_path)
+        out_dir = Path(tmpd) / (Path(__file__).name + '-wget')
+        print(f'extracting dir {out_dir}')
+        bsp.untar(out_dir)
+        for f in out_dir.glob('**/*'):
+            print(' +', f)
+    print('all done.')
+
+if __name__ == '__main__':
+    main()
+
+# spyce: section data
+# spyce: start wget-1.9.1.tar.gz
+# spyce: - flavor="url"
+# spyce: - url="https://ftp.gnu.org/gnu/wget/wget-1.9.1.tar.gz"

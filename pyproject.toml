@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spyce"
+version = "0.1.0"  ## bumpversion!
+authors = [
+    {name = "Simone Campagna", email = "simone.campagna11@gmail.com"},
+]
+description = "Add spices to python source files"
+requires-python = ">=3.6"
+keywords = []
+classifiers = []
+dependencies = ["pyyaml", "argcomplete"]
+
+[project.optional-dependencies]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+spyce = "spyce.tool:main_spyce"
